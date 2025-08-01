@@ -15,9 +15,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: crate-ci/typos@master
       - run: rustup update stable && rustup default stable
       - run: cargo fmt --check
       - run: cargo clippy
+      - run: |
+          git clone --depth 1 https://github.com/DrTimothyAldenDavis/GraphBLAS.git
+          cd GraphBLAS
+          make compact
+          sudo make install
+          cd ..
+      - run: |
+          cd vendor/LAGraph
+          make
+          sudo make install
+          cd ../..
       - run: cargo build --verbose
       - run: cargo test --verbose
