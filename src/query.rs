@@ -5,7 +5,7 @@ use nom::{
     IResult,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Pattern {
     Uri(String),
     Seq(Box<Pattern>, Box<Pattern>),
@@ -15,13 +15,13 @@ pub enum Pattern {
     Opt(Box<Pattern>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Vertex {
     Any,
     Con(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Query {
     pub src: Vertex,
     pub pattern: Pattern,
