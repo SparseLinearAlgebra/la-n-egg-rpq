@@ -72,7 +72,7 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         .filter_map(|line| {
             let mut splits = line.split_whitespace();
             let edge = splits.next()?;
-            let edge = edge[1..edge.len()].to_string();
+            let edge = edge[1..edge.len() - 1].to_string();
             let num = splits.next()?.parse::<usize>().ok()?;
             Some((num, edge))
         })
