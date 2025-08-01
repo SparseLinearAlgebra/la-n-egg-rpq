@@ -14,7 +14,13 @@ pub struct Graph {
 impl Graph {
     fn plan_aux(&self, expr: &mut RecExpr<Plan>, pattern: Pattern) -> Id {
         match pattern {
-            Pattern::Uri(uri) => expr.add(Plan::Label(*self.nvals.get(&uri).expect("TBD"))),
+            Pattern::Uri(uri) => Ok(expr.add(Plan::Label(LabelMeta {
+                nvals: *self
+                    .nvals
+                    .get(&uri)
+                    .ok_or(format!("no such label: {}", uri))?,
+                name: uri,
+            }))),
             Pattern::Seq(lhs, rhs) => {
                 let lhs = self.plan_aux(expr, *lhs);
                 let rhs = self.plan_aux(expr, *rhs);
