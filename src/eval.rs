@@ -2,9 +2,11 @@ use std::ptr::null_mut;
 
 use crate::graph::Graph;
 use crate::plan::Plan;
-use std::collections::HashMap;
+use std::time::Instant;
+
 
 #[repr(C)]
+#[derive(Clone)]
 pub enum RpqMatrixOp {
     Label,
     Lor,
@@ -15,6 +17,7 @@ pub enum RpqMatrixOp {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct RpqMatrixPlan {
     pub op: RpqMatrixOp,
     pub lhs: *mut RpqMatrixPlan,
@@ -26,7 +29,12 @@ pub struct RpqMatrixPlan {
 #[link(name = "lagraphx")]
 extern "C" {
     pub fn LAGraph_RpqMatrix_initialize() -> libc::c_longlong;
-    pub fn LAGraph_RPQMatrix(plan: *mut RpqMatrixPlan, msg: *mut libc::c_char) -> libc::c_longlong;
+    pub fn LAGraph_DestroyRpqMatrixPlan(plan: *mut RpqMatrixPlan);
+    pub fn LAGraph_RpqMatrix_getnnz(plan: *mut RpqMatrixPlan) -> libc::c_longlong;
+    pub fn LAGraph_RPQMatrix(
+        plan: *mut RpqMatrixPlan,
+        msg: *mut libc::c_char,
+    ) -> libc::c_longlong;
     pub fn LAGraph_RPQMatrix_label(
         mat: *mut *mut libc::c_void,
         x: usize,
@@ -44,42 +52,51 @@ extern "C" {
     ) -> libc::c_int;
 }
 
-pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) {
-    let mut plans: HashMap<egg::Id, RpqMatrixPlan> = HashMap::with_capacity(expr.len());
+pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
+    let mut plans: Vec<RpqMatrixPlan> = vec![
+        RpqMatrixPlan {
+            op: RpqMatrixOp::Label,
+            lhs: null_mut(),
+            rhs: null_mut(),
+            mat: null_mut(),
+            res_mat: null_mut()
+        };
+        expr.len()
+    ];
     expr.items().for_each(|(id, plan)| {
         let eval_plan = match plan {
             &Plan::Seq([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Concat,
-                lhs: plans.get_mut(&lhs).unwrap() as *mut RpqMatrixPlan,
-                rhs: plans.get_mut(&rhs).unwrap() as *mut RpqMatrixPlan,
+                lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
+                rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: null_mut(),
                 mat: null_mut(),
             },
             &Plan::Alt([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Lor,
-                lhs: plans.get_mut(&lhs).unwrap() as *mut RpqMatrixPlan,
-                rhs: plans.get_mut(&rhs).unwrap() as *mut RpqMatrixPlan,
+                lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
+                rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: null_mut(),
                 mat: null_mut(),
             },
             &Plan::Star([lhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Kleene,
                 lhs: null_mut(),
-                rhs: plans.get_mut(&lhs).unwrap() as *mut RpqMatrixPlan,
+                rhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: null_mut(),
                 mat: null_mut(),
             },
             &Plan::LStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneL,
-                lhs: plans.get_mut(&lhs).unwrap() as *mut RpqMatrixPlan,
-                rhs: plans.get_mut(&rhs).unwrap() as *mut RpqMatrixPlan,
+                lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
+                rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: null_mut(),
                 mat: null_mut(),
             },
             &Plan::RStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneR,
-                lhs: plans.get_mut(&lhs).unwrap() as *mut RpqMatrixPlan,
-                rhs: plans.get_mut(&rhs).unwrap() as *mut RpqMatrixPlan,
+                lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
+                rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: null_mut(),
                 mat: null_mut(),
             },
@@ -111,10 +128,22 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) {
                 }
             }
         };
-        plans.insert(id, eval_plan);
+        plans[std::convert::Into::<usize>::into(id)] = eval_plan;
     });
-    let (_id, plan) = plans.iter_mut().last().unwrap();
+    let plan = plans.iter_mut().last().unwrap();
+    
     unsafe {
-        LAGraph_RPQMatrix(plan as *mut RpqMatrixPlan, null_mut());
+        let start = Instant::now();
+        let res = LAGraph_RPQMatrix(plan as *mut RpqMatrixPlan, null_mut());
+        let elapsed = start.elapsed();
+        println!("ns:{}",elapsed.as_nanos());
+        assert_eq!(res, 0);
+    };
+
+    unsafe{
+        let nnz = LAGraph_RpqMatrix_getnnz(plan as *mut RpqMatrixPlan);
+        println!("nnz: {}",nnz);
+        println!("");
+        Ok(0)
     }
 }

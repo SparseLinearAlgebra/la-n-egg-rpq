@@ -5,6 +5,7 @@ mod query;
 
 use egg::Runner;
 use eval::LAGraph_RpqMatrix_initialize;
+// use nom::Parser;
 use std::path::Path;
 
 use crate::{
@@ -51,14 +52,18 @@ fn main() {
         let expr = graph.run(query);
         match expr {
             Ok(expr) => {
+                
                 let runner = Runner::default()
                     .with_explanations_disabled()
                     .with_expr(&expr)
                     .run(&rules);
                 let extractor = egg::Extractor::new(&runner.egraph, SillyCostFn);
                 let (best_cost, best) = extractor.find_best(runner.roots[0]);
-                println!("{:?} {}", best_cost, best);
-                eval(&graph, best);
+                if (best.is_dag() && !best.is_dag())  || (best_cost< -12312321.1){
+                    println!("");
+                }
+                let _ = eval(&graph, expr);
+
             }
             Err(msg) => {
                 println!("unable to execute query: {}", msg);
