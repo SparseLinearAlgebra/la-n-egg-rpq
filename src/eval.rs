@@ -3,7 +3,11 @@ use std::ptr::null_mut;
 use crate::graph::Graph;
 use crate::plan::Plan;
 use std::time::Instant;
+<<<<<<< Updated upstream
 
+=======
+use std::ptr;
+>>>>>>> Stashed changes
 
 #[repr(C)]
 #[derive(Clone)]
@@ -28,10 +32,14 @@ pub struct RpqMatrixPlan {
 
 #[link(name = "lagraphx")]
 extern "C" {
-    pub fn LAGraph_RpqMatrix_initialize() -> libc::c_longlong;
     pub fn LAGraph_DestroyRpqMatrixPlan(plan: *mut RpqMatrixPlan);
+<<<<<<< Updated upstream
     pub fn LAGraph_RpqMatrix_getnnz(plan: *mut RpqMatrixPlan) -> libc::c_longlong;
     pub fn LAGraph_RPQMatrix(
+=======
+    pub fn LAGraph_RPQMatrix(
+        ans: *mut usize,
+>>>>>>> Stashed changes
         plan: *mut RpqMatrixPlan,
         msg: *mut libc::c_char,
     ) -> libc::c_longlong;
@@ -134,6 +142,7 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
     
     unsafe {
         let start = Instant::now();
+<<<<<<< Updated upstream
         let res = LAGraph_RPQMatrix(plan as *mut RpqMatrixPlan, null_mut());
         let elapsed = start.elapsed();
         println!("ns:{}",elapsed.as_nanos());
@@ -145,5 +154,14 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
         println!("nnz: {}",nnz);
         println!("");
         Ok(0)
+=======
+        let mut err_ptr: *mut std::os::raw::c_char = ptr::null_mut();
+        let res  = LAGraph_RPQMatrix(&mut ans, plan as *mut RpqMatrixPlan, err_ptr);
+        // println!("{}", res);
+        assert_eq!(res,0);
+        let elapsed = start.elapsed();    
+        println!("{};{}", ans,elapsed.as_nanos());
+        // LAGraph_DestroyRpqMatrixPlan(plan);
+>>>>>>> Stashed changes
     }
 }
