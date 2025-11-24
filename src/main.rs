@@ -74,10 +74,12 @@ fn main() {
 
     let queries_path = std::env::args().nth(2).unwrap();
     let queries_path = Path::new(&queries_path);
-
+    // let mut i = 1;
+    // let mut res = 9999999999;
     read_queries(queries_path).into_iter().for_each(|query| {
         println!("Running {:?}", query);
         let expr = graph.run(query.clone());
+
         match expr {
             Ok(expr) => {
                 let runs: u32 = 1000;
@@ -86,13 +88,20 @@ fn main() {
                 let first_n_runs = runs / 100;
                 println!("Stats for {:?}", query);
                 println!("    First {:?} runs", first_n_runs);
+                // let mut flag = true;
                 results
                     .iter()
                     .take(first_n_runs.try_into().unwrap())
                     .for_each(|(plan, ans, duration)| {
                         println!("    - {:?} {} {}", duration, plan, ans);
+                        // if flag == true {
+                        //     res = *ans;
+                        //     flag = false;
+                        // }
                     });
-                //results.sort_by_key(|(_plan, _ans, duration)| duration);
+                // flag = true;
+
+                // results.sort_by_key(|(_plan, _ans, duration)| duration);
                 let (best_plan, _, best_time) = results
                     .iter()
                     .min_by_key(|(_plan, _ans, duration)| duration)
@@ -106,13 +115,16 @@ fn main() {
                     .map(|(_plan, _ans, duration)| duration)
                     .sum::<Duration>()
                     .div(runs);
-                //let (_, _, median_time) = results[results.len() / 2].clone();
+                let (_, _, median_time) = results[results.len() / 2].clone();
 
                 println!("    Best {:?}: {}", best_time, best_plan);
                 println!("    Worst {:?}: {}", worst_time, worst_plan);
                 println!("    Mean: {:?}", mean_time);
-                //println!("    Median: {:?}", median_time);
+                println!("    Median: {:?}", median_time);
+
                 println!();
+                // println!("{};{};{:?}", i, res, best_time.as_nanos());
+                // i = i + 1;
             }
             Err(msg) => {
                 println!("unable to execute query: {}", msg);

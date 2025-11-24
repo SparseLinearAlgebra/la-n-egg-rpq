@@ -109,7 +109,7 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                             unsafe {
                                 LAGraph_RPQMatrix_label(
                                     &mut mat as *mut grb::Matrix,
-                                    *vert_idx,
+                                    *vert_idx - 1,
                                     graph.verts.len(),
                                     graph.verts.len(),
                                 );
