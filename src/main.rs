@@ -6,7 +6,7 @@ mod query;
 
 use crate::{
     eval::{eval, LAGraph_Init},
-    plan::{make_rules, NnzCostFn, RandomCostFn, CardinalityCostFn},
+    plan::{make_rules, CardinalityCostFn, NnzCostFn, RandomCostFn},
     query::Query,
 };
 use egg::{RecExpr, Runner};
@@ -76,10 +76,9 @@ fn run_nnz<'a>(
     let (_, plan) = extractor.find_best(runner.roots[0]);
 
     let start = std::time::Instant::now();
-    let answer = eval(graph, plan.clone()).ok()?; 
+    let answer = eval(graph, plan.clone()).ok()?;
     Some((plan, answer, start.elapsed()))
 }
-
 
 fn run_cardinality<'a>(
     graph: &'a Graph,
@@ -112,94 +111,43 @@ fn main() {
 
     let queries_path = std::env::args().nth(2).unwrap();
     let queries_path = Path::new(&queries_path);
-    // let mut i = 1;
-    // let mut res = 9999999999;
+
+    let cost_fun_type = std::env::args().nth(3).unwrap();
+    let mut query_num = 1;
     read_queries(queries_path).into_iter().for_each(|query| {
-        println!("Running {:?}", query);
+        // println!("Running {:?}", query);
         let expr = graph.run(query.clone());
-
-        match expr {
-            Ok(expr) => {
-                let runs: u32 = 1000;
-                let results: Vec<(RecExpr<Plan>, usize, Duration)> =
-                    run_random(&graph, runs, &expr).collect();
-                let first_n_runs = runs / 100;
-                println!("Stats for {:?}", query);
-                println!("    First {:?} runs", first_n_runs);
-                // let mut flag = true;
-                results
-                    .iter()
-                    .take(first_n_runs.try_into().unwrap())
-                    .for_each(|(plan, ans, duration)| {
-                        println!("    - {:?} {} {}", duration, plan, ans);
-                        // if flag == true {
-                        //     res = *ans;
-                        //     flag = false;
-                        // }
-                    });
-                // flag = true;
-
-                // results.sort_by_key(|(_plan, _ans, duration)| duration);
-                let (best_plan, _, best_time) = results
-                    .iter()
-                    .min_by_key(|(_plan, _ans, duration)| duration)
-                    .unwrap();
-                let (worst_plan, _, worst_time) = results
-                    .iter()
-                    .max_by_key(|(_plan, _ans, duration)| duration)
-                    .unwrap();
-                let mean_time = results
-                    .iter()
-                    .map(|(_plan, _ans, duration)| duration)
-                    .sum::<Duration>()
-                    .div(runs);
-                let (_, _, median_time) = results[results.len() / 2].clone();
-
-                println!("    Best {:?}: {}", best_time, best_plan);
-                println!("    Worst {:?}: {}", worst_time, worst_plan);
-                println!("    Mean: {:?}", mean_time);
-                println!("    Median: {:?}", median_time);
-
-                println!();
-                // println!("{};{};{:?}", i, res, best_time.as_nanos());
-                // i = i + 1;
-            }
+        match cost_fun_type.as_str() {
+            "nnz" => match expr {
+                Ok(expr) => {
+                    let result: Option<(RecExpr<Plan>, usize, Duration)> = run_nnz(&graph, &expr);
+                    match result {
+                        Some((_plan, ans, duration)) => {
+                            println!("{};{};{:?}", query_num, ans, duration.as_nanos());
+                        }
+                        None => {
+                            println!("no result");
+                        }
+                    }
+                }
+                Err(msg) => {
+                    println!("unable to execute query: {}", msg);
+                }
+            },
             "cardinality" => {
-                 match expr {
+                match expr {
                     Ok(expr) => {
                         // let runs: u32 = 1000;
-                        let _result: Option<(RecExpr<Plan>, usize, Duration)> =
+                        let result: Option<(RecExpr<Plan>, usize, Duration)> =
                             run_cardinality(&graph, &expr);
-                        // let first_n_runs = runs / 100;
-                        // println!("Stats for {:?}", query);
-                        // println!("    First {:?} runs", first_n_runs);
-                        // results
-                        //     .iter()
-                        //     .take(first_n_runs.try_into().unwrap())
-                        //     .for_each(|(plan, ans, duration)| {
-                        //         println!("    - {:?} {} {}", duration, plan, ans);
-                        //     });
-                        // //results.sort_by_key(|(_plan, _ans, duration)| duration);
-                        // let (best_plan, _, best_time) = results
-                        //     .iter()
-                        //     .min_by_key(|(_plan, _ans, duration)| duration)
-                        //     .unwrap();
-                        // let (worst_plan, _, worst_time) = results
-                        //     .iter()
-                        //     .max_by_key(|(_plan, _ans, duration)| duration)
-                        //     .unwrap();
-                        // let mean_time = results
-                        //     .iter()
-                        //     .map(|(_plan, _ans, duration)| duration)
-                        //     .sum::<Duration>()
-                        //     .div(runs);
-                        // //let (_, _, median_time) = results[results.len() / 2].clone();
-
-                        // println!("    Best {:?}: {}", best_time, best_plan);
-                        // println!("    Worst {:?}: {}", worst_time, worst_plan);
-                        // println!("    Mean: {:?}", mean_time);
-                        // //println!("    Median: {:?}", median_time);
-                        // println!();
+                        match result {
+                            Some((_plan, ans, duration)) => {
+                                println!("_;{};{:?}", ans, duration);
+                            }
+                            None => {
+                                println!("no result");
+                            }
+                        }
                     }
                     Err(msg) => {
                         println!("unable to execute query: {}", msg);
@@ -247,9 +195,10 @@ fn main() {
                         println!("unable to execute query: {}", msg);
                     }
                 }
-            },
-            &_ => todo!()
+            }
+            &_ => todo!(),
         }
+        query_num += 1;
     });
 }
 
