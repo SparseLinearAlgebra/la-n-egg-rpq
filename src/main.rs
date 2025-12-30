@@ -14,6 +14,18 @@ use graph::Graph;
 use plan::Plan;
 use std::{ops::Div, path::Path, time::Duration};
 
+#[cfg(debug_assertions)]
+macro_rules! dprintln {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! dprintln {
+    ($($arg:tt)*) => {};
+}
+
 /// Read queries from file.
 ///
 /// The file should contain lines satisfying the following pattern: `<number>,<src> <pattern> <dest>`.
@@ -67,36 +79,72 @@ fn run_nnz<'a>(
 ) -> Option<(RecExpr<Plan>, usize, Duration)> {
     let rules = make_rules();
 
+    // planning
+    let runner_start = std::time::Instant::now();
     let runner = Runner::default()
         .with_explanations_disabled()
         .with_expr(expr)
         .run(&rules);
+    let runner_time = runner_start.elapsed();
+    // planning
 
+    // extract
+    let extract_start = std::time::Instant::now();
     let extractor = egg::Extractor::new(&runner.egraph, NnzCostFn);
     let (_, plan) = extractor.find_best(runner.roots[0]);
-
+    let extract_time = extract_start.elapsed();
+    // extract
+    // execution
     let start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
-    Some((plan, answer, start.elapsed()))
+    // execution
+    let eval_time = start.elapsed();
+    dprintln!(
+        "\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        runner_time.as_nanos(),
+        extract_time.as_nanos(),
+        eval_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+    );
+    Some((plan, answer, eval_time))
 }
 
 fn run_cardinality<'a>(
     graph: &'a Graph,
     expr: &'a RecExpr<Plan>,
 ) -> Option<(RecExpr<Plan>, usize, Duration)> {
-    let rules = make_rules();
+        let rules = make_rules();
 
+    // planning
+    let runner_start = std::time::Instant::now();
     let runner = Runner::default()
         .with_explanations_disabled()
         .with_expr(expr)
         .run(&rules);
+    let runner_time = runner_start.elapsed();
+    // planning
 
+    // extract
+    let extract_start = std::time::Instant::now();
     let extractor = egg::Extractor::new(&runner.egraph, CardinalityCostFn);
     let (_, plan) = extractor.find_best(runner.roots[0]);
+    let extract_time = extract_start.elapsed();
+    // extract
+    // execution
     let start = std::time::Instant::now();
-    // TODO: check answers.
     let answer = eval(graph, plan.clone()).ok()?;
-    Some((plan, answer, start.elapsed()))
+    // execution
+    let eval_time = start.elapsed();
+    dprintln!(
+        "\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        runner_time.as_nanos(),
+        extract_time.as_nanos(),
+        eval_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+    );
+    Some((plan, answer, eval_time))
 }
 
 fn main() {
@@ -115,7 +163,7 @@ fn main() {
     let cost_fun_type = std::env::args().nth(3).unwrap();
     let mut query_num = 1;
     read_queries(queries_path).into_iter().for_each(|query| {
-        // println!("Running {:?}", query);
+        println!("Running {:?}", query);
         let expr = graph.run(query.clone());
         match cost_fun_type.as_str() {
             "nnz" => match expr {
