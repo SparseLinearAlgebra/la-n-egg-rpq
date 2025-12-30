@@ -6,7 +6,7 @@ mod query;
 
 use crate::{
     eval::{eval, LAGraph_Init},
-    plan::{make_rules, RandomCostFn},
+    plan::{make_rules, NnzCostFn, RandomCostFn, CardinalityCostFn},
     query::Query,
 };
 use egg::{RecExpr, Runner};
@@ -60,6 +60,44 @@ fn run_random<'a>(
         let answer = eval(graph, plan.clone()).ok()?;
         Some((plan, answer, start.elapsed()))
     })
+}
+fn run_nnz<'a>(
+    graph: &'a Graph,
+    expr: &'a RecExpr<Plan>,
+) -> Option<(RecExpr<Plan>, usize, Duration)> {
+    let rules = make_rules();
+
+    let runner = Runner::default()
+        .with_explanations_disabled()
+        .with_expr(expr)
+        .run(&rules);
+
+    let extractor = egg::Extractor::new(&runner.egraph, NnzCostFn);
+    let (_, plan) = extractor.find_best(runner.roots[0]);
+
+    let start = std::time::Instant::now();
+    let answer = eval(graph, plan.clone()).ok()?; 
+    Some((plan, answer, start.elapsed()))
+}
+
+
+fn run_cardinality<'a>(
+    graph: &'a Graph,
+    expr: &'a RecExpr<Plan>,
+) -> Option<(RecExpr<Plan>, usize, Duration)> {
+    let rules = make_rules();
+
+    let runner = Runner::default()
+        .with_explanations_disabled()
+        .with_expr(expr)
+        .run(&rules);
+
+    let extractor = egg::Extractor::new(&runner.egraph, CardinalityCostFn);
+    let (_, plan) = extractor.find_best(runner.roots[0]);
+    let start = std::time::Instant::now();
+    // TODO: check answers.
+    let answer = eval(graph, plan.clone()).ok()?;
+    Some((plan, answer, start.elapsed()))
 }
 
 fn main() {
@@ -126,9 +164,91 @@ fn main() {
                 // println!("{};{};{:?}", i, res, best_time.as_nanos());
                 // i = i + 1;
             }
-            Err(msg) => {
-                println!("unable to execute query: {}", msg);
+            "cardinality" => {
+                 match expr {
+                    Ok(expr) => {
+                        // let runs: u32 = 1000;
+                        let _result: Option<(RecExpr<Plan>, usize, Duration)> =
+                            run_cardinality(&graph, &expr);
+                        // let first_n_runs = runs / 100;
+                        // println!("Stats for {:?}", query);
+                        // println!("    First {:?} runs", first_n_runs);
+                        // results
+                        //     .iter()
+                        //     .take(first_n_runs.try_into().unwrap())
+                        //     .for_each(|(plan, ans, duration)| {
+                        //         println!("    - {:?} {} {}", duration, plan, ans);
+                        //     });
+                        // //results.sort_by_key(|(_plan, _ans, duration)| duration);
+                        // let (best_plan, _, best_time) = results
+                        //     .iter()
+                        //     .min_by_key(|(_plan, _ans, duration)| duration)
+                        //     .unwrap();
+                        // let (worst_plan, _, worst_time) = results
+                        //     .iter()
+                        //     .max_by_key(|(_plan, _ans, duration)| duration)
+                        //     .unwrap();
+                        // let mean_time = results
+                        //     .iter()
+                        //     .map(|(_plan, _ans, duration)| duration)
+                        //     .sum::<Duration>()
+                        //     .div(runs);
+                        // //let (_, _, median_time) = results[results.len() / 2].clone();
+
+                        // println!("    Best {:?}: {}", best_time, best_plan);
+                        // println!("    Worst {:?}: {}", worst_time, worst_plan);
+                        // println!("    Mean: {:?}", mean_time);
+                        // //println!("    Median: {:?}", median_time);
+                        // println!();
+                    }
+                    Err(msg) => {
+                        println!("unable to execute query: {}", msg);
+                    }
+                }
             }
+            "random" => {
+                match expr {
+                    Ok(expr) => {
+                        let runs: u32 = 1000;
+                        let results: Vec<(RecExpr<Plan>, usize, Duration)> =
+                            run_random(&graph, runs, &expr).collect();
+                        let first_n_runs = runs / 100;
+                        println!("Stats for {:?}", query);
+                        println!("    First {:?} runs", first_n_runs);
+                        results
+                            .iter()
+                            .take(first_n_runs.try_into().unwrap())
+                            .for_each(|(plan, ans, duration)| {
+                                println!("    - {:?} {} {}", duration, plan, ans);
+                            });
+                        //results.sort_by_key(|(_plan, _ans, duration)| duration);
+                        let (best_plan, _, best_time) = results
+                            .iter()
+                            .min_by_key(|(_plan, _ans, duration)| duration)
+                            .unwrap();
+                        let (worst_plan, _, worst_time) = results
+                            .iter()
+                            .max_by_key(|(_plan, _ans, duration)| duration)
+                            .unwrap();
+                        let mean_time = results
+                            .iter()
+                            .map(|(_plan, _ans, duration)| duration)
+                            .sum::<Duration>()
+                            .div(runs);
+                        //let (_, _, median_time) = results[results.len() / 2].clone();
+
+                        println!("    Best {:?}: {}", best_time, best_plan);
+                        println!("    Worst {:?}: {}", worst_time, worst_plan);
+                        println!("    Mean: {:?}", mean_time);
+                        //println!("    Median: {:?}", median_time);
+                        println!();
+                    }
+                    Err(msg) => {
+                        println!("unable to execute query: {}", msg);
+                    }
+                }
+            },
+            &_ => todo!()
         }
     });
 }
