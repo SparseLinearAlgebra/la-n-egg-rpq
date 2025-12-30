@@ -59,6 +59,69 @@ impl CostFunction<Plan> for RandomCostFn {
     }
 }
 
+pub struct NnzCostFn;
+impl CostFunction<Plan> for NnzCostFn {
+    type Cost = f64;
+    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Label(meta) => meta.nvals as f64,
+            Plan::Seq(args) => costs(args[0]).min(costs(args[1])).powf(1.1),
+            Plan::Alt(args) => costs(args[0]).min(costs(args[1])).powf(1.1),
+            Plan::Star(args) => costs(args[0]).powi(2),
+            Plan::LStar(args) => costs(args[0]) * costs(args[1]),
+            Plan::RStar(args) => costs(args[0]) * costs(args[1]),
+        }
+    }
+}
+
+pub struct CardinalityCostFn;
+impl CostFunction<Plan> for CardinalityCostFn {
+    type Cost = f64;
+
+    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Label(_meta) => {
+                panic!()
+            }
+
+            Plan::Seq([a, b]) => {
+                let _ca = costs(*a);
+                let _cb = costs(*b);
+                panic!()
+            }
+
+            Plan::Alt([a, b]) => {
+                let _ca = costs(*a);
+                let _cb = costs(*b);
+                panic!()
+            }
+
+            Plan::Star([a]) => {
+                let _ca = costs(*a);
+                panic!()
+            }
+
+            Plan::LStar([a, b]) => {
+                let _ca = costs(*a);
+                let _cb = costs(*b);
+                panic!()
+            }
+
+            Plan::RStar([a, b]) => {
+                let _ca = costs(*a);
+                let _cb = costs(*b);
+                panic!()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
