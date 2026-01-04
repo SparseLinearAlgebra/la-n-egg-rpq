@@ -6,9 +6,10 @@ use std::{
 };
 
 use egg::{Id, RecExpr};
+use libc::c_ulonglong;
 
 use crate::{
-    eval::LAGraph_MMRead,
+    eval::{LAGraph_MMRead, LAGraph_RPQMatrix_reduce},
     grb,
     plan::{LabelMeta, Plan},
     query::{Pattern, Query, Vertex},
@@ -18,6 +19,7 @@ pub struct Graph {
     nvals: HashMap<String, usize>,
     pub mats: HashMap<String, grb::Matrix>,
     pub verts: HashMap<String, usize>,
+    pub nvals_reduces: HashMap<String, (libc::c_ulonglong, libc::c_ulonglong)>,
 }
 
 impl Graph {
@@ -29,6 +31,16 @@ impl Graph {
                     .get(&uri)
                     .ok_or(format!("no such label: {}", uri))?,
                 name: uri,
+                rreduce_nvals: *self
+                    .nvals_reduces
+                    .get(&uri)
+                    .0
+                    .ok_or(format!("no such label: {}", uri))?,
+                creduce_nvals: *self
+                    .nvals_reduces
+                    .get(&uri)
+                    .1
+                    .ok_or(format!("no such label: {}", uri))?,
             }))),
             Pattern::Seq(lhs, rhs) => {
                 let lhs = self.plan_aux(expr, *lhs)?;
@@ -68,7 +80,12 @@ impl Graph {
                 pattern,
                 dest: Vertex::Any,
             } => {
-                let lhs = expr.add(Plan::Label(LabelMeta { name, nvals: 1 }));
+                let lhs = expr.add(Plan::Label(LabelMeta {
+                    name,
+                    nvals: 1,
+                    rreduce_nvals: 1,
+                    creduce_nvals: 1,
+                }));
                 let rhs = self.plan_aux(&mut expr, pattern)?;
                 expr.add(Plan::Seq([lhs, rhs]))
             }
@@ -78,7 +95,12 @@ impl Graph {
                 dest: Vertex::Con(name),
             } => {
                 let lhs = self.plan_aux(&mut expr, pattern)?;
-                let rhs = expr.add(Plan::Label(LabelMeta { name, nvals: 1 }));
+                let rhs = expr.add(Plan::Label(LabelMeta {
+                    name,
+                    nvals: 1,
+                    rreduce_nvals: 1,
+                    creduce_nvals: 1,
+                }));
                 expr.add(Plan::Seq([lhs, rhs]))
             }
             Query {
@@ -172,5 +194,25 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         })
         .collect();
 
-    Ok(Graph { nvals, mats, verts })
+    let nvals_reduces: HashMap<String, (usize, usize)> = mats
+        .iter()
+        .map(|(edge, mat): (String, &mut grb::Matrix)| {
+            let mut nnz_rows = 0;
+            let mut nnz_cols = 0;
+            unsafe {
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, reduce_type);
+                Ok(code);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, reduce_type);
+                Ok(code);
+            };
+            (edge.clone(), (nnz_rows, nnz_cols))
+        })
+        .collect();
+
+    Ok(Graph {
+        nvals,
+        mats,
+        verts,
+        nvals_reduces,
+    })
 }

@@ -1,5 +1,7 @@
 use std::ptr::null_mut;
 
+use libc::c_ulonglong;
+
 use crate::graph::Graph;
 use crate::grb;
 use crate::plan::Plan;
@@ -23,6 +25,8 @@ pub struct RpqMatrixPlan {
     pub rhs: *mut RpqMatrixPlan,
     pub mat: grb::Matrix,
     pub res_mat: grb::Matrix,
+    pub row_reduced: libc::c_ulonglong,
+    pub col_reduced: libc::c_ulonglong,
 }
 
 #[link(name = "lagraphx")]
@@ -40,6 +44,14 @@ extern "C" {
         i: usize,
         j: usize,
     ) -> libc::c_longlong;
+    pub fn LAGraph_RPQMatrix_reduce(
+        res: *mut libc::c_ulonglong,
+        mat: *mut grb::Matrix,
+        reduce_type: *mut libc::uint8_t, // reduce_type values:
+                                         // 0 --- reduce by row
+                                         // 1 --- reduce by col
+    ) -> libc::c_int;
+    
 }
 
 #[link(name = "lagraph")]
@@ -58,7 +70,9 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
             lhs: null_mut(),
             rhs: null_mut(),
             mat: grb::Matrix::null(),
-            res_mat: grb::Matrix::null()
+            res_mat: grb::Matrix::null(),
+            row_reduced: -1,
+            col_reduced: -1,
         };
         expr.len()
     ];
@@ -70,6 +84,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                row_reduced: -1,
+                col_reduced: -1,
             },
             &Plan::Alt([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Lor,
@@ -77,6 +93,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                row_reduced: -1,
+                col_reduced: -1,
             },
             &Plan::Star([lhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Kleene,
@@ -84,6 +102,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                 rhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                row_reduced: -1,
+                col_reduced: -1,
             },
             &Plan::LStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneL,
@@ -91,6 +111,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                row_reduced: -1,
+                col_reduced: -1,
             },
             &Plan::RStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneR,
@@ -98,6 +120,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
                 res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                row_reduced: -1,
+                col_reduced: -1,
             },
             Plan::Label(meta) => {
                 let mut mat: grb::Matrix = grb::Matrix(std::ptr::null_mut());
@@ -124,7 +148,9 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                     lhs: null_mut(),
                     rhs: null_mut(),
                     res_mat: grb::Matrix::null(),
-                    mat,
+                    mat: mat,
+                    row_reduced: // TODO: get form graph hashmap,
+                    col_reduced: // TODO: get form graph hashmap,
                 }
             }
         };
