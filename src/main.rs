@@ -185,7 +185,6 @@ fn main() {
             "cardinality" => {
                 match expr {
                     Ok(expr) => {
-                        // let runs: u32 = 1000;
                         let result: Option<(RecExpr<Plan>, usize, Duration)> =
                             run_cardinality(&graph, &expr);
                         match result {

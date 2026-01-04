@@ -6,6 +6,8 @@ use egg::*;
 pub struct LabelMeta {
     pub name: String,
     pub nvals: usize,
+    pub rreduce_nvals: usize,
+    pub creduce_nvals: usize
 }
 
 impl FromStr for LabelMeta {
@@ -15,6 +17,8 @@ impl FromStr for LabelMeta {
         Ok(LabelMeta {
             name: "-".to_string(),
             nvals: s.parse()?,
+            rreduce_nvals: s.parse()?,
+            creduce_nvals: s.parse()?,
         })
     }
 }
