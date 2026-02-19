@@ -19,7 +19,7 @@ pub struct Graph {
     nvals: HashMap<String, usize>,
     pub mats: HashMap<String, grb::Matrix>,
     pub verts: HashMap<String, usize>,
-    pub nvals_reduces: HashMap<String, (libc::c_ulonglong, libc::c_ulonglong)>,
+    pub nvals_reduces: HashMap<String, (libc::usize, libc::usize)>,
 }
 
 impl Graph {
@@ -200,9 +200,9 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
             let mut nnz_rows = 0;
             let mut nnz_cols = 0;
             unsafe {
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, reduce_type);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, u8(0));
                 Ok(code);
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, reduce_type);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, u8(1));
                 Ok(code);
             };
             (edge.clone(), (nnz_rows, nnz_cols))

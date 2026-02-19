@@ -7,7 +7,7 @@ pub struct LabelMeta {
     pub name: String,
     pub nvals: usize,
     pub rreduce_nvals: usize,
-    pub creduce_nvals: usize
+    pub creduce_nvals: usize,
 }
 
 impl FromStr for LabelMeta {
@@ -81,23 +81,74 @@ impl CostFunction<Plan> for NnzCostFn {
     }
 }
 
+pub struct CardCost {
+    pub score: f64,
+    pub nnz_r: f64,
+    pub nnz_c: f64,
+}
+
+impl Eq for CardCost {}
+
+impl PartialOrd for CardCost {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CardCost {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.score.total_cmp(&other.score) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.nnz.total_cmp(&other.nnz) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.nnz_r.total_cmp(&other.nnz_r) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        self.nnz_c.total_cmp(&other.nnz_c)
+    }
+}
+
 pub struct CardinalityCostFn;
 impl CostFunction<Plan> for CardinalityCostFn {
-    type Cost = f64;
+    type Cost = CardCost;
 
     fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
     where
         C: FnMut(Id) -> Self::Cost,
     {
         match enode {
-            Plan::Label(_meta) => {
-                panic!()
+            Plan::Label(meta) => {
+                let nnz_r = meta.rreduce_nvals as f64;
+                let nnz_c = meta.creduce_nvals as f64;
+                CardCost {
+                    score: 0.0,
+                    nnz_r,
+                    nnz_c,
+                }
             }
 
             Plan::Seq([a, b]) => {
-                let _ca = costs(*a);
-                let _cb = costs(*b);
-                panic!()
+                // C = A x B
+                let ca = costs(*a);
+                let cb = costs(*b);
+
+                // calculate score of C
+                let denom = ca.nnz_r.max(cb.nnz_c).max(1.0);
+                let op_cost = (ca.nnz * cb.nnz) / denom;
+
+                let score = ca.score + cb.score + op_cost;
+
+                // estimate nonzeros in C matrix reduced by rows and columns
+                CardCost {
+                    score: score,
+                    nnz_r, // TODO
+                    nnz_c, // TODO
+                }
             }
 
             Plan::Alt([a, b]) => {
