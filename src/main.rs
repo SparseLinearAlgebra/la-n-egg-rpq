@@ -94,10 +94,12 @@ fn run_nnz<'a>(
     let (_, plan) = extractor.find_best(runner.roots[0]);
     let extract_time = extract_start.elapsed();
     // extract
+
     // execution
     let start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
     // execution
+
     let eval_time = start.elapsed();
     dprintln!(
         "\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
@@ -114,7 +116,7 @@ fn run_cardinality<'a>(
     graph: &'a Graph,
     expr: &'a RecExpr<Plan>,
 ) -> Option<(RecExpr<Plan>, usize, Duration)> {
-        let rules = make_rules();
+    let rules = make_rules();
 
     // planning
     let runner_start = std::time::Instant::now();
@@ -131,13 +133,15 @@ fn run_cardinality<'a>(
     let (_, plan) = extractor.find_best(runner.roots[0]);
     let extract_time = extract_start.elapsed();
     // extract
+
     // execution
     let start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
     // execution
+
     let eval_time = start.elapsed();
     dprintln!(
-        "\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        "\n===DEBUG INFO===\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
         runner_time.as_nanos(),
         extract_time.as_nanos(),
         eval_time.as_nanos(),
@@ -182,25 +186,23 @@ fn main() {
                     println!("unable to execute query: {}", msg);
                 }
             },
-            "cardinality" => {
-                match expr {
-                    Ok(expr) => {
-                        let result: Option<(RecExpr<Plan>, usize, Duration)> =
-                            run_cardinality(&graph, &expr);
-                        match result {
-                            Some((_plan, ans, duration)) => {
-                                println!("_;{};{:?}", ans, duration);
-                            }
-                            None => {
-                                println!("no result");
-                            }
+            "cardinality" => match expr {
+                Ok(expr) => {
+                    let result: Option<(RecExpr<Plan>, usize, Duration)> =
+                        run_cardinality(&graph, &expr);
+                    match result {
+                        Some((_plan, ans, duration)) => {
+                            println!("{};{};{:?}", query_num, ans, duration.as_nanos());
+                        }
+                        None => {
+                            println!("no result");
                         }
                     }
-                    Err(msg) => {
-                        println!("unable to execute query: {}", msg);
-                    }
                 }
-            }
+                Err(msg) => {
+                    println!("unable to execute query: {}", msg);
+                }
+            },
             "random" => {
                 match expr {
                     Ok(expr) => {
