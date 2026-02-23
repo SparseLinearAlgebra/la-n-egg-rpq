@@ -1,12 +1,12 @@
 use std::{
     collections::HashMap,
     ffi::CString,
-    io,
+    fs::File,
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
 use egg::{Id, RecExpr};
-use libc::c_ulonglong;
 
 use crate::{
     eval::{LAGraph_MMRead, LAGraph_RPQMatrix_reduce},
@@ -17,31 +17,31 @@ use crate::{
 
 pub struct Graph {
     nvals: HashMap<String, usize>,
+    size: usize,
     pub mats: HashMap<String, grb::Matrix>,
     pub verts: HashMap<String, usize>,
-    pub nvals_reduces: HashMap<String, (libc::usize, libc::usize)>,
+    pub nvals_reduces: HashMap<String, (usize, usize)>,
 }
 
 impl Graph {
     fn plan_aux(&self, expr: &mut RecExpr<Plan>, pattern: Pattern) -> Result<Id, String> {
         match pattern {
-            Pattern::Uri(uri) => Ok(expr.add(Plan::Label(LabelMeta {
-                nvals: *self
-                    .nvals
-                    .get(&uri)
-                    .ok_or(format!("no such label: {}", uri))?,
-                name: uri,
-                rreduce_nvals: *self
+            Pattern::Uri(uri) => {
+                let reduces = self
                     .nvals_reduces
                     .get(&uri)
-                    .0
-                    .ok_or(format!("no such label: {}", uri))?,
-                creduce_nvals: *self
-                    .nvals_reduces
-                    .get(&uri)
-                    .1
-                    .ok_or(format!("no such label: {}", uri))?,
-            }))),
+                    .ok_or(format!("no such label: {}", uri))?;
+
+                Ok(expr.add(Plan::Label(LabelMeta {
+                    nvals: *self
+                        .nvals
+                        .get(&uri)
+                        .ok_or(format!("no such label: {}", uri))?,
+                    name: uri,
+                    rreduce_nvals: reduces.0,
+                    creduce_nvals: reduces.1,
+                })))
+            }
             Pattern::Seq(lhs, rhs) => {
                 let lhs = self.plan_aux(expr, *lhs)?;
                 let rhs = self.plan_aux(expr, *rhs)?;
@@ -155,24 +155,24 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         })
         .collect();
 
+    let mut size: usize = 0;
     let nvals: HashMap<String, usize> = mat_files
         .iter()
         .filter_map(|(edge, file)| {
-            // TODO: read only first 3 lines :/.
-            let edge_nvals = std::fs::read_to_string(file)
-                .ok()?
-                .lines()
-                .nth(2)?
-                .split_whitespace()
-                .nth(2)?
-                .parse::<usize>()
-                .ok()?;
-
+            let f = File::open(file).ok()?;
+            let mut lines = BufReader::new(f).lines();
+            lines.next()?.ok()?;
+            lines.next()?.ok()?;
+            let third_str = lines.next()?.ok()?;
+            let mut third = third_str.split(' ');
+            let n = third.next()?.parse::<usize>().ok()?;
+            size = n;
+            let edge_nvals = third.next()?.parse::<usize>().ok()?;
             Some((edge.clone(), edge_nvals))
         })
         .collect();
 
-    let mats: HashMap<String, grb::Matrix> = mat_files
+    let mut mats: HashMap<String, grb::Matrix> = mat_files
         .iter()
         .map(|(edge, file)| {
             let mut mat = grb::Matrix(std::ptr::null_mut());
@@ -195,15 +195,15 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         .collect();
 
     let nvals_reduces: HashMap<String, (usize, usize)> = mats
-        .iter()
-        .map(|(edge, mat): (String, &mut grb::Matrix)| {
-            let mut nnz_rows = 0;
-            let mut nnz_cols = 0;
+        .iter_mut()
+        .map(|(edge, mat)| {
+            let mut nnz_rows: usize = 0;
+            let mut nnz_cols: usize = 0;
             unsafe {
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, u8(0));
-                Ok(code);
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, u8(1));
-                Ok(code);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, 0 as u8);
+                assert_eq!(code, 0);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, 1 as u8);
+                assert_eq!(code, 0);
             };
             (edge.clone(), (nnz_rows, nnz_cols))
         })
@@ -214,5 +214,6 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         mats,
         verts,
         nvals_reduces,
+        size, // TODO: user it in plan builder
     })
 }
