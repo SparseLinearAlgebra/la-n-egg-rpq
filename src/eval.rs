@@ -1,7 +1,5 @@
 use std::ptr::null_mut;
 
-use libc::c_ulonglong;
-
 use crate::graph::Graph;
 use crate::grb;
 use crate::plan::Plan;
@@ -43,9 +41,9 @@ extern "C" {
         j: usize,
     ) -> libc::c_longlong;
     pub fn LAGraph_RPQMatrix_reduce(
-        res: *mut libc::c_ulonglong,
+        res: *mut usize,
         mat: *mut grb::Matrix,
-        reduce_type: *mut libc::uint8_t, // reduce_type values:
+        reduce_type: u8, // reduce_type values:
                                          // 0 --- reduce by row
                                          // 1 --- reduce by col
     ) -> libc::c_int;

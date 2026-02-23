@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr, cmp::Ordering};
 
 use egg::*;
 
@@ -80,9 +80,10 @@ impl CostFunction<Plan> for NnzCostFn {
         }
     }
 }
-
+#[derive(Clone, Debug, PartialEq)]
 pub struct CardCost {
     pub score: f64,
+    pub nnz: f64,
     pub nnz_r: f64,
     pub nnz_c: f64,
 }
@@ -127,6 +128,7 @@ impl CostFunction<Plan> for CardinalityCostFn {
                 let nnz_c = meta.creduce_nvals as f64;
                 CardCost {
                     score: 0.0,
+                    nnz: meta.nvals as f64,
                     nnz_r,
                     nnz_c,
                 }
@@ -146,32 +148,33 @@ impl CostFunction<Plan> for CardinalityCostFn {
                 // estimate nonzeros in C matrix reduced by rows and columns
                 CardCost {
                     score: score,
-                    nnz_r, // TODO
-                    nnz_c, // TODO
+                    nnz: 0.0, //TODO
+                    nnz_r: 0.0, // TODO
+                    nnz_c: 0.0, // TODO
                 }
             }
 
             Plan::Alt([a, b]) => {
                 let _ca = costs(*a);
                 let _cb = costs(*b);
-                panic!()
+                todo!()
             }
 
             Plan::Star([a]) => {
                 let _ca = costs(*a);
-                panic!()
+                todo!()
             }
 
             Plan::LStar([a, b]) => {
                 let _ca = costs(*a);
                 let _cb = costs(*b);
-                panic!()
+                todo!()
             }
 
             Plan::RStar([a, b]) => {
                 let _ca = costs(*a);
                 let _cb = costs(*b);
-                panic!()
+                todo!()
             }
         }
     }
