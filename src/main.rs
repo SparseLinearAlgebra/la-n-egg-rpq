@@ -6,7 +6,10 @@ mod query;
 
 use crate::{
     eval::{eval, LAGraph_Init},
-    plan::{make_rules, CardinalityCostFn, NnzCostFn, RandomCostFn},
+    plan::{
+        make_rules, make_stupid_rules, CardinalityCostFn, NnzCostFn, RandomCostFn, StupidCostFn,
+        WanderCostFn,
+    },
     query::Query,
 };
 use egg::{RecExpr, Runner};
@@ -151,6 +154,84 @@ fn run_cardinality<'a>(
     Some((plan, answer, eval_time))
 }
 
+fn run_wander<'a>(
+    graph: &'a Graph,
+    expr: &'a RecExpr<Plan>,
+) -> Option<(RecExpr<Plan>, usize, Duration)> {
+    let rules = make_rules();
+
+    // planning
+    let runner_start = std::time::Instant::now();
+    let runner = Runner::default()
+        .with_explanations_disabled()
+        .with_expr(expr)
+        .run(&rules);
+    let runner_time = runner_start.elapsed();
+    // planning
+
+    // extract
+    let extract_start = std::time::Instant::now();
+    let extractor = egg::Extractor::new(&runner.egraph, WanderCostFn { graph: graph });
+    let (_, plan) = extractor.find_best(runner.roots[0]);
+    let extract_time = extract_start.elapsed();
+    // extract
+
+    // execution
+    let start = std::time::Instant::now();
+    let answer = eval(graph, plan.clone()).ok()?;
+    // execution
+
+    let eval_time = start.elapsed();
+    dprintln!(
+        "\n===DEBUG INFO===\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        runner_time.as_nanos(),
+        extract_time.as_nanos(),
+        eval_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos(),
+        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+    );
+    Some((plan, answer, eval_time))
+}
+
+// fn run_wander<'a>(
+//     graph: &'a Graph,
+//     expr: &'a RecExpr<Plan>,
+// ) -> Option<(RecExpr<Plan>, usize, Duration)> {
+//     let rules = make_rules();
+
+//     let runner = Runner::default()
+//         .with_explanations_disabled()
+//         .with_expr(expr)
+//         .run(&rules);
+
+//     let costfn = WanderCostFn { graph: graph };
+//     let extractor = egg::Extractor::new(&runner.egraph, costfn);
+//     let (cost, plan) = extractor.find_best(runner.roots[0]);
+//     let start = std::time::Instant::now();
+//     // TODO: check answers.
+//     let answer = eval(graph, plan.clone()).ok()?;
+//     Some((plan, answer, start.elapsed()))
+// }
+
+// fn run_stupid<'a>(
+//     graph: &'a Graph,
+//     expr: &'a RecExpr<Plan>,
+// ) -> Option<(RecExpr<Plan>, usize, Duration)> {
+//     let stupid_rules = make_stupid_rules();
+
+//     let runner = Runner::default()
+//         .with_explanations_disabled()
+//         .with_expr(expr)
+//         .run(&stupid_rules);
+
+//     let extractor = egg::Extractor::new(&runner.egraph, StupidCostFn);
+//     let (_, plan) = extractor.find_best(runner.roots[0]);
+//     let start = std::time::Instant::now();
+//     // TODO: check answers.
+//     let answer = eval(graph, plan.clone()).ok()?;
+//     Some((plan, answer, start.elapsed()))
+// }
+
 fn main() {
     unsafe {
         let res = LAGraph_Init(std::ptr::null_mut());
@@ -190,6 +271,23 @@ fn main() {
                 Ok(expr) => {
                     let result: Option<(RecExpr<Plan>, usize, Duration)> =
                         run_cardinality(&graph, &expr);
+                    match result {
+                        Some((_plan, ans, duration)) => {
+                            println!("{};{};{:?}", query_num, ans, duration.as_nanos());
+                        }
+                        None => {
+                            println!("no result");
+                        }
+                    }
+                }
+                Err(msg) => {
+                    println!("unable to execute query: {}", msg);
+                }
+            },
+            "wander" => match expr {
+                Ok(expr) => {
+                    let result: Option<(RecExpr<Plan>, usize, Duration)> =
+                        run_wander(&graph, &expr);
                     match result {
                         Some((_plan, ans, duration)) => {
                             println!("{};{};{:?}", query_num, ans, duration.as_nanos());

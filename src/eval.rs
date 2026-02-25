@@ -44,9 +44,26 @@ extern "C" {
         res: *mut usize,
         mat: *mut grb::Matrix,
         reduce_type: u8, // reduce_type values:
-                                         // 0 --- reduce by row
-                                         // 1 --- reduce by col
+                         // 0 --- reduce by row
+                         // 1 --- reduce by col
     ) -> libc::c_int;
+    pub fn LAGraph_RPQMatrix_ExtractRandom(
+        rhs: grb::Matrix,
+        srhs: *mut grb::Matrix,
+        seed: libc::c_longlong,
+    ) -> libc::c_longlong;
+    pub fn LAGraph_RPQMatrix_Alt(
+        lhs: grb::Matrix,
+        rhs: grb::Matrix,
+        res: *mut grb::Matrix,
+        nvals: *mut usize,
+    ) -> libc::c_longlong;
+    pub fn LAGraph_RPQMatrix_Seq(
+        lhs: grb::Matrix,
+        rhs: grb::Matrix,
+        res: *mut grb::Matrix,
+        nvals: *mut usize,
+    ) -> libc::c_longlong;
 
 }
 

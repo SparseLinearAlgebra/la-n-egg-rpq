@@ -1,6 +1,13 @@
-use std::{fmt::Display, str::FromStr, cmp::Ordering};
+use std::{cmp::Ordering, collections::HashMap, fmt::Display, str::FromStr};
 
 use egg::*;
+use libc::timegm;
+
+use crate::{
+    eval::{LAGraph_RPQMatrix_Alt, LAGraph_RPQMatrix_ExtractRandom, LAGraph_RPQMatrix_Seq},
+    graph::Graph,
+    grb,
+};
 
 #[derive(Clone, Hash, Ord, Eq, PartialEq, PartialOrd, Debug)]
 pub struct LabelMeta {
@@ -47,8 +54,19 @@ pub fn make_rules() -> Vec<egg::Rewrite<Plan, ()>> {
         rewrite!("assoc-alt"; "(| ?a (| ?b ?c))" => "(| (| ?a ?b) ?c)"),
         rewrite!("distribute-1"; "(/ ?a (| ?b ?c))" => "(| (/ ?a ?b) (/ ?a ?c))"),
         rewrite!("distribute-2"; "(/ (| ?a ?b) ?c)" => "(| (/ ?a ?c) (/ ?b ?c))"),
-        rewrite!("build-lstar"; "(/ ?a (* ?b))" => "(l* ?a ?b)"),
-        rewrite!("build-rstar"; "(/ (* ?a) ?b)" => "(*r ?a ?b)"),
+        rewrite!("distribute-3"; "(| (/ ?a ?b) (/ ?a ?c))" => "(/ ?a (| ?b ?c))"),
+        rewrite!("distribute-4"; "(| (/ ?a ?c) (/ ?b ?c))" => "(/ (| ?a ?b) ?c)"),
+        rewrite!("build-lstar"; "(/ (* ?a) ?b)" => "(l* ?a ?b)"),
+        rewrite!("build-rstar"; "(/ ?a (* ?b))" => "(*r ?a ?b)"),
+    ]
+}
+
+pub fn make_stupid_rules() -> Vec<egg::Rewrite<Plan, ()>> {
+    vec![
+        rewrite!("assoc-sec-1"; "(/ ?a (/ ?b ?c))" => "(/ (/ ?a ?b) ?c)"),
+        rewrite!("assoc-sec-2"; "(/ (/ ?a ?b) ?c)" => "(/ ?a (/ ?b ?c))"),
+        rewrite!("commute-alt"; "(| ?a ?b)" => "(| ?b ?a)"),
+        rewrite!("assoc-alt"; "(| ?a (| ?b ?c))" => "(| (| ?a ?b) ?c)"),
     ]
 }
 
@@ -148,7 +166,7 @@ impl CostFunction<Plan> for CardinalityCostFn {
                 // estimate nonzeros in C matrix reduced by rows and columns
                 CardCost {
                     score: score,
-                    nnz: 0.0, //TODO
+                    nnz: 0.0,   //TODO
                     nnz_r: 0.0, // TODO
                     nnz_c: 0.0, // TODO
                 }
@@ -174,6 +192,182 @@ impl CostFunction<Plan> for CardinalityCostFn {
             Plan::RStar([a, b]) => {
                 let _ca = costs(*a);
                 let _cb = costs(*b);
+                todo!()
+            }
+        }
+    }
+}
+
+pub struct CardinalityEstFn;
+impl CostFunction<Plan> for CardinalityEstFn {
+    type Cost = usize;
+    fn cost<C>(&mut self, enode: &Plan, mut cardinalities: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Label(meta) => meta.nvals,
+            Plan::Seq(_args) => todo!(),
+            Plan::Alt(args) => cardinalities(args[0]) + cardinalities(args[1]),
+            Plan::Star(_args) => todo!(),
+            Plan::LStar(_args) => todo!(),
+            Plan::RStar(_args) => todo!(),
+        }
+    }
+}
+
+pub struct CostFn;
+impl CostFunction<Plan> for CostFn {
+    type Cost = f64;
+    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Label(_meta) => 0.0,
+            Plan::Seq(args) =>
+            /* costs(args[0]) + costs(args[1]) +*/
+            {
+                todo!()
+            }
+            Plan::Alt(args) =>
+            /* costs(args[0]) + costs(args[1]) +*/
+            {
+                todo!()
+            }
+            Plan::Star(args) =>
+            /* costs(args[0]) +*/
+            {
+                todo!()
+            }
+            Plan::LStar(args) => todo!(),
+            Plan::RStar(args) => todo!(),
+        }
+    }
+}
+
+pub struct StupidCostFn;
+impl CostFunction<Plan> for StupidCostFn {
+    type Cost = f64;
+    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Label(meta) => meta.nvals as f64,
+            Plan::Seq(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
+            Plan::Alt(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
+            _ => todo!(),
+        }
+    }
+}
+
+pub struct _AdjustedCostFn<CostFn: CostFunction<Plan, Cost = f64>>(
+    pub CostFn,
+    pub HashMap<Plan, f64>,
+);
+impl<CostFn: CostFunction<Plan, Cost = f64>> CostFunction<Plan> for _AdjustedCostFn<CostFn> {
+    type Cost = f64;
+
+    fn cost<C>(&mut self, enode: &Plan, costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        let _AdjustedCostFn(orig_cost_fn, adjusts) = self;
+        match adjusts.get(enode) {
+            Some(cost) => cost.clone(),
+            None => orig_cost_fn.cost(enode, costs),
+        }
+    }
+}
+
+impl core::fmt::Debug for grb::Matrix {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Matrix").finish()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WanderCostIntm {
+    nvals: usize,
+    cost: f64,
+    mat: grb::Matrix,
+}
+
+impl PartialEq for WanderCostIntm {
+    // Required method
+    fn eq(&self, other: &WanderCostIntm) -> bool {
+        self.cost.eq(&other.cost)
+    }
+}
+impl PartialOrd for WanderCostIntm {
+    fn partial_cmp(&self, other: &WanderCostIntm) -> Option<std::cmp::Ordering> {
+        self.cost.partial_cmp(&other.cost)
+    }
+}
+
+pub struct WanderCostFn<'a> {
+    pub graph: &'a Graph,
+}
+impl<'a> CostFunction<Plan> for WanderCostFn<'a> {
+    type Cost = WanderCostIntm;
+
+    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+    where
+        C: FnMut(Id) -> Self::Cost,
+    {
+        match enode {
+            Plan::Seq([lhs, rhs]) => {
+                let mut smat = grb::Matrix::null();
+                let lhs = costs(*lhs);
+                let rhs = costs(*rhs);
+                let mut nvals: usize = 0;
+                unsafe {
+                    LAGraph_RPQMatrix_Seq(
+                        lhs.mat,
+                        rhs.mat,
+                        (&mut smat) as *mut grb::Matrix,
+                        (&mut nvals) as *mut usize,
+                    );
+                }
+                WanderCostIntm {
+                    mat: smat,
+                    nvals: nvals * 8usize.pow(3),
+                    cost: lhs.cost + rhs.cost + ((lhs.nvals as f64) + (rhs.nvals as f64)).powf(1.4),
+                }
+            }
+            Plan::Alt([lhs, rhs]) => {
+                let mut smat = grb::Matrix::null();
+                let lhs = costs(*lhs);
+                let rhs = costs(*rhs);
+                let mut nvals: usize = 0;
+                unsafe {
+                    LAGraph_RPQMatrix_Alt(
+                        lhs.mat,
+                        rhs.mat,
+                        (&mut smat) as *mut grb::Matrix,
+                        (&mut nvals) as *mut usize,
+                    );
+                }
+                WanderCostIntm {
+                    mat: smat,
+                    nvals: nvals * 8usize.pow(3),
+                    cost: lhs.cost + rhs.cost + ((lhs.nvals as f64) + (rhs.nvals as f64)),
+                }
+            }
+            Plan::Label(meta) => {
+                let mat = (*self.graph).mats.get(&meta.name).unwrap().clone();
+                let mut smat = grb::Matrix::null();
+                unsafe {
+                    LAGraph_RPQMatrix_ExtractRandom(mat, (&mut smat) as *mut grb::Matrix, 42);
+                }
+                WanderCostIntm {
+                    nvals: meta.nvals,
+                    mat: smat,
+                    cost: 0.0,
+                }
+            }
+            _ => {
                 todo!()
             }
         }
