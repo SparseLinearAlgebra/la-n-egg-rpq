@@ -32,8 +32,9 @@ The binary will be available in the `target/release/` directory
 Basically, the binary can be used as follows.
 
 ```bash
-la-n-egg-rpq <path-to-graph-as-matrix-market-files> <queries-file>
+la-n-egg-rpq <path-to-graph-as-matrix-market-files> <queries-file> <cost-function>
 ```
+available cost functions: `nnz`, `cardinality`, `wander`, `random`
 
 To convert the graph, please, use [our tools](https://github.com/SparseLinearAlgebra/la-rpq) for converting them into [the MatrixMarket format](https://math.nist.gov/MatrixMarket/formats.html). You might start from [one of the prepared datasets](https://github.com/SparseLinearAlgebra/la-rpq/tree/main/Datasets).
 
