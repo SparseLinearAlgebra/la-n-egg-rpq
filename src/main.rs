@@ -248,7 +248,7 @@ fn main() {
     let cost_fun_type = std::env::args().nth(3).unwrap();
     let mut query_num = 1;
     read_queries(queries_path).into_iter().for_each(|query| {
-        println!("Running {:?}", query);
+        // println!("Running {:?}", query);
         let expr = graph.run(query.clone());
         match cost_fun_type.as_str() {
             "nnz" => match expr {

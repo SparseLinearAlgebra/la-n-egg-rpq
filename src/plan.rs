@@ -42,8 +42,8 @@ pub enum Plan {
     "/" = Seq([egg::Id; 2]),
     "|" = Alt([egg::Id; 2]),
     "*" = Star([egg::Id; 1]),
-    "*r" = LStar([egg::Id; 2]),
-    "l*" = RStar([egg::Id; 2]),
+    "l*" = LStar([egg::Id; 2]),
+    "*r" = RStar([egg::Id; 2]),
 } }
 
 pub fn make_rules() -> Vec<egg::Rewrite<Plan, ()>> {
