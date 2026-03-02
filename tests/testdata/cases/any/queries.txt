@@ -1,0 +1,10 @@
+1,?sub <references>/<cite>/<creator> ?obj
+1,?sub (<references>/<cite>/<creator>)|(<creator>/<coauthor>/<coauthor>) ?obj
+1,?sub (<coauthor>)* ?obj
+1,?sub (<coauthor>)*/<predecessor> ?obj
+1,?sub (<coauthor>)+ ?obj
+1,?sub (<references>/<cite>)* ?obj
+1,?sub <partOf>/<editor>/(<predecessor>|<coauthor>) ?obj
+1,?sub <partOf>/<editor>/(<predecessor>|<coauthor>)* ?obj
+1,?sub (<editor>|<creator>)/(<predecessor>|<coauthor>) ?obj
+1,?sub (<editor>|<creator>)/(<predecessor>|<coauthor>)* ?obj
