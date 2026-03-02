@@ -1,0 +1,9 @@
+<journal> 1
+<creator> 2
+<references> 3
+<cite> 4
+<editor> 5
+<coauthor> 6
+<partOf> 7
+<record> 8
+<predecessor> 9

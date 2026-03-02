@@ -1,0 +1,15 @@
+%%MatrixMarket matrix coordinate pattern general
+%%GraphBLAS type bool
+24225 24225 12
+177 1
+177 7
+177 9
+177 11
+177 13
+177 179
+5739 179
+5739 180
+5739 181
+5739 182
+5739 183
+5739 179
