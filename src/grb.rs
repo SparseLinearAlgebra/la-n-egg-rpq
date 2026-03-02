@@ -1,7 +1,7 @@
 use std::ptr::null_mut;
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Matrix(pub *mut libc::c_void);
 
 impl Matrix {

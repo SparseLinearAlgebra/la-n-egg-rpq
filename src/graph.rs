@@ -164,14 +164,22 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
             lines.next()?.ok()?;
             lines.next()?.ok()?;
             let third_str = lines.next()?.ok()?;
-            let mut third = third_str.split(' ');
-            let n = third.next()?.parse::<usize>().ok()?;
-            size = n;
-            let edge_nvals = third.next()?.parse::<usize>().ok()?;
+            let mut parts = third_str.split(' ');
+
+            let nrows = parts.next()?.parse::<usize>().ok()?;
+            let ncols = parts.next()?.parse::<usize>().ok()?;
+            let nnz = parts.next()?.parse::<usize>().ok()?;
+
+            if nrows != ncols {
+                panic!("matrix should be squared")
+            }
+
+            size = nrows;
+            let edge_nvals = nnz;
+
             Some((edge.clone(), edge_nvals))
         })
         .collect();
-
     let mut mats: HashMap<String, grb::Matrix> = mat_files
         .iter()
         .map(|(edge, file)| {
@@ -180,7 +188,10 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
                 let c_file = CString::new(file.to_str().unwrap()).unwrap();
                 let mode = CString::new("r").unwrap();
                 let f = libc::fopen(c_file.as_ptr(), mode.as_ptr());
-                let code = LAGraph_MMRead(&mut mat as *mut grb::Matrix, f, std::ptr::null_mut());
+                if f.is_null() {
+                    panic!("fopen failed for {}", file.display());
+                }
+                let code = LAGraph_MMRead(&mut mat, f, std::ptr::null_mut());
                 assert_eq!(
                     code,
                     0,
@@ -195,16 +206,19 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         .collect();
 
     let nvals_reduces: HashMap<String, (usize, usize)> = mats
-        .iter_mut()
+        .iter()
         .map(|(edge, mat)| {
             let mut nnz_rows: usize = 0;
             let mut nnz_cols: usize = 0;
+
             unsafe {
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, 0 as u8);
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, *mat, 0);
                 assert_eq!(code, 0);
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, 1 as u8);
+
+                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, *mat, 1);
                 assert_eq!(code, 0);
-            };
+            }
+
             (edge.clone(), (nnz_rows, nnz_cols))
         })
         .collect();
