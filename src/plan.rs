@@ -1,7 +1,6 @@
-use std::{cmp::Ordering, collections::HashMap, fmt::Display, str::FromStr};
+use std::{cmp::Ordering, fmt::Display, str::FromStr};
 
 use egg::*;
-use libc::timegm;
 
 use crate::{
     eval::{LAGraph_RPQMatrix_Alt, LAGraph_RPQMatrix_ExtractRandom, LAGraph_RPQMatrix_Seq},
@@ -61,14 +60,14 @@ pub fn make_rules() -> Vec<egg::Rewrite<Plan, ()>> {
     ]
 }
 
-pub fn make_stupid_rules() -> Vec<egg::Rewrite<Plan, ()>> {
-    vec![
-        rewrite!("assoc-sec-1"; "(/ ?a (/ ?b ?c))" => "(/ (/ ?a ?b) ?c)"),
-        rewrite!("assoc-sec-2"; "(/ (/ ?a ?b) ?c)" => "(/ ?a (/ ?b ?c))"),
-        rewrite!("commute-alt"; "(| ?a ?b)" => "(| ?b ?a)"),
-        rewrite!("assoc-alt"; "(| ?a (| ?b ?c))" => "(| (| ?a ?b) ?c)"),
-    ]
-}
+// pub fn make_stupid_rules() -> Vec<egg::Rewrite<Plan, ()>> {
+//     vec![
+//         rewrite!("assoc-sec-1"; "(/ ?a (/ ?b ?c))" => "(/ (/ ?a ?b) ?c)"),
+//         rewrite!("assoc-sec-2"; "(/ (/ ?a ?b) ?c)" => "(/ ?a (/ ?b ?c))"),
+//         rewrite!("commute-alt"; "(| ?a ?b)" => "(| ?b ?a)"),
+//         rewrite!("assoc-alt"; "(| ?a (| ?b ?c))" => "(| (| ?a ?b) ?c)"),
+//     ]
+// }
 
 pub struct RandomCostFn;
 impl CostFunction<Plan> for RandomCostFn {
@@ -132,7 +131,13 @@ impl Ord for CardCost {
     }
 }
 
-pub struct CardinalityCostFn;
+pub struct CardinalityCostFn {
+    pub n: f64,
+    pub star_penalty: f64,
+    pub lr_multiplier: f64,
+}
+
+// TODO: check value intervals
 impl CostFunction<Plan> for CardinalityCostFn {
     type Cost = CardCost;
 
@@ -141,145 +146,195 @@ impl CostFunction<Plan> for CardinalityCostFn {
         C: FnMut(Id) -> Self::Cost,
     {
         match enode {
-            Plan::Label(meta) => {
-                let nnz_r = meta.rreduce_nvals as f64;
-                let nnz_c = meta.creduce_nvals as f64;
-                CardCost {
-                    score: 0.0,
-                    nnz: meta.nvals as f64,
-                    nnz_r,
-                    nnz_c,
-                }
-            }
+            Plan::Label(meta) => CardCost {
+                score: 0.0,
+                nnz: meta.nvals as f64,
+                nnz_r: meta.rreduce_nvals as f64,
+                nnz_c: meta.creduce_nvals as f64,
+            },
 
             Plan::Seq([a, b]) => {
-                // C = A x B
                 let ca = costs(*a);
                 let cb = costs(*b);
 
-                // calculate score of C
                 let denom = ca.nnz_r.max(cb.nnz_c).max(1.0);
                 let op_cost = (ca.nnz * cb.nnz) / denom;
-
                 let score = ca.score + cb.score + op_cost;
 
-                // estimate nonzeros in C matrix reduced by rows and columns
+                let nnz_est = ca.nnz * cb.nnz / (self.n * self.n);
+
                 CardCost {
-                    score: score,
-                    nnz: 0.0,   //TODO
-                    nnz_r: 0.0, // TODO
-                    nnz_c: 0.0, // TODO
+                    score,
+                    nnz: nnz_est,
+                    nnz_r: ca.nnz_r.min(self.n), // TODO: better reduce estimators
+                    nnz_c: cb.nnz_c.min(self.n), // TODO: better reduce estimators
                 }
             }
 
             Plan::Alt([a, b]) => {
-                let _ca = costs(*a);
-                let _cb = costs(*b);
-                todo!()
+                let ca = costs(*a);
+                let cb = costs(*b);
+
+                let overlap = (ca.nnz * cb.nnz) / (self.n * self.n);
+                let op_cost = ca.nnz + cb.nnz - overlap;
+                let score = ca.score + cb.score + op_cost;
+
+                let nnz_est = (ca.nnz + cb.nnz - overlap).min(self.n * self.n).max(0.0);
+
+                let nnz_r_est = (ca.nnz_r + cb.nnz_r - (ca.nnz_r * cb.nnz_r) / self.n)
+                    .min(self.n)
+                    .max(0.0);
+
+                let nnz_c_est = (ca.nnz_c + cb.nnz_c - (ca.nnz_c * cb.nnz_c) / self.n)
+                    .min(self.n)
+                    .max(0.0);
+
+                CardCost {
+                    score,
+                    nnz: nnz_est,
+                    nnz_r: nnz_r_est,
+                    nnz_c: nnz_c_est,
+                }
             }
 
             Plan::Star([a]) => {
-                let _ca = costs(*a);
-                todo!()
+                let ca = costs(*a);
+
+                let penalty = self.star_penalty * ca.nnz.max(1.0);
+                let score = ca.score + penalty;
+
+                CardCost {
+                    score,
+                    nnz: self.n * self.n,
+                    nnz_r: self.n,
+                    nnz_c: self.n,
+                }
             }
 
             Plan::LStar([a, b]) => {
-                let _ca = costs(*a);
-                let _cb = costs(*b);
-                todo!()
+                let ca = costs(*a);
+                let cb = costs(*b);
+
+                let denom = ca.nnz_r.max(cb.nnz_c).max(1.0);
+                let base = (ca.nnz * cb.nnz) / denom;
+                let op_cost = self.lr_multiplier * base;
+                let score = ca.score + cb.score + op_cost;
+
+                let nnz_est = self.lr_multiplier * ca.nnz * cb.nnz / (self.n * self.n);
+
+                CardCost {
+                    score,
+                    nnz: nnz_est,
+                    nnz_r: ca.nnz_r.min(self.n), // TODO: better reduce estimators
+                    nnz_c: cb.nnz_c.min(self.n), // TODO: better reduce estimators
+                }
             }
 
             Plan::RStar([a, b]) => {
-                let _ca = costs(*a);
-                let _cb = costs(*b);
-                todo!()
+                let ca = costs(*a);
+                let cb = costs(*b);
+
+                let denom = ca.nnz_r.max(cb.nnz_c).max(1.0);
+                let base = (ca.nnz * cb.nnz) / denom;
+
+                let op_cost = self.lr_multiplier * base;
+                let score = ca.score + cb.score + op_cost;
+
+                let nnz_est = self.lr_multiplier * ca.nnz * cb.nnz / (self.n * self.n);
+
+                CardCost {
+                    score,
+                    nnz: nnz_est,
+                    nnz_r: ca.nnz_r.min(self.n), // TODO: better reduce estimators
+                    nnz_c: cb.nnz_c.min(self.n), // TODO: better reduce estimators
+                }
             }
         }
     }
 }
 
-pub struct CardinalityEstFn;
-impl CostFunction<Plan> for CardinalityEstFn {
-    type Cost = usize;
-    fn cost<C>(&mut self, enode: &Plan, mut cardinalities: C) -> Self::Cost
-    where
-        C: FnMut(Id) -> Self::Cost,
-    {
-        match enode {
-            Plan::Label(meta) => meta.nvals,
-            Plan::Seq(_args) => todo!(),
-            Plan::Alt(args) => cardinalities(args[0]) + cardinalities(args[1]),
-            Plan::Star(_args) => todo!(),
-            Plan::LStar(_args) => todo!(),
-            Plan::RStar(_args) => todo!(),
-        }
-    }
-}
+// pub struct CardinalityEstFn;
+// impl CostFunction<Plan> for CardinalityEstFn {
+//     type Cost = usize;
+//     fn cost<C>(&mut self, enode: &Plan, mut cardinalities: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         match enode {
+//             Plan::Label(meta) => meta.nvals,
+//             Plan::Seq(_args) => todo!(),
+//             Plan::Alt(args) => cardinalities(args[0]) + cardinalities(args[1]),
+//             Plan::Star(_args) => todo!(),
+//             Plan::LStar(_args) => todo!(),
+//             Plan::RStar(_args) => todo!(),
+//         }
+//     }
+// }
 
-pub struct CostFn;
-impl CostFunction<Plan> for CostFn {
-    type Cost = f64;
-    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
-    where
-        C: FnMut(Id) -> Self::Cost,
-    {
-        match enode {
-            Plan::Label(_meta) => 0.0,
-            Plan::Seq(args) =>
-            /* costs(args[0]) + costs(args[1]) +*/
-            {
-                todo!()
-            }
-            Plan::Alt(args) =>
-            /* costs(args[0]) + costs(args[1]) +*/
-            {
-                todo!()
-            }
-            Plan::Star(args) =>
-            /* costs(args[0]) +*/
-            {
-                todo!()
-            }
-            Plan::LStar(args) => todo!(),
-            Plan::RStar(args) => todo!(),
-        }
-    }
-}
+// pub struct CostFn;
+// impl CostFunction<Plan> for CostFn {
+//     type Cost = f64;
+//     fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         match enode {
+//             Plan::Label(_meta) => 0.0,
+//             Plan::Seq(args) =>
+//             /* costs(args[0]) + costs(args[1]) +*/
+//             {
+//                 todo!()
+//             }
+//             Plan::Alt(args) =>
+//             /* costs(args[0]) + costs(args[1]) +*/
+//             {
+//                 todo!()
+//             }
+//             Plan::Star(args) =>
+//             /* costs(args[0]) +*/
+//             {
+//                 todo!()
+//             }
+//             Plan::LStar(args) => todo!(),
+//             Plan::RStar(args) => todo!(),
+//         }
+//     }
+// }
 
-pub struct StupidCostFn;
-impl CostFunction<Plan> for StupidCostFn {
-    type Cost = f64;
-    fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
-    where
-        C: FnMut(Id) -> Self::Cost,
-    {
-        match enode {
-            Plan::Label(meta) => meta.nvals as f64,
-            Plan::Seq(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
-            Plan::Alt(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
-            _ => todo!(),
-        }
-    }
-}
+// pub struct StupidCostFn;
+// impl CostFunction<Plan> for StupidCostFn {
+//     type Cost = f64;
+//     fn cost<C>(&mut self, enode: &Plan, mut costs: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         match enode {
+//             Plan::Label(meta) => meta.nvals as f64,
+//             Plan::Seq(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
+//             Plan::Alt(args) => (costs(args[0]) + costs(args[1])).powf(1.1),
+//             _ => todo!(),
+//         }
+//     }
+// }
 
-pub struct _AdjustedCostFn<CostFn: CostFunction<Plan, Cost = f64>>(
-    pub CostFn,
-    pub HashMap<Plan, f64>,
-);
-impl<CostFn: CostFunction<Plan, Cost = f64>> CostFunction<Plan> for _AdjustedCostFn<CostFn> {
-    type Cost = f64;
+// pub struct _AdjustedCostFn<CostFn: CostFunction<Plan, Cost = f64>>(
+//     pub CostFn,
+//     pub HashMap<Plan, f64>,
+// );
+// impl<CostFn: CostFunction<Plan, Cost = f64>> CostFunction<Plan> for _AdjustedCostFn<CostFn> {
+//     type Cost = f64;
 
-    fn cost<C>(&mut self, enode: &Plan, costs: C) -> Self::Cost
-    where
-        C: FnMut(Id) -> Self::Cost,
-    {
-        let _AdjustedCostFn(orig_cost_fn, adjusts) = self;
-        match adjusts.get(enode) {
-            Some(cost) => cost.clone(),
-            None => orig_cost_fn.cost(enode, costs),
-        }
-    }
-}
+//     fn cost<C>(&mut self, enode: &Plan, costs: C) -> Self::Cost
+//     where
+//         C: FnMut(Id) -> Self::Cost,
+//     {
+//         let _AdjustedCostFn(orig_cost_fn, adjusts) = self;
+//         match adjusts.get(enode) {
+//             Some(cost) => cost.clone(),
+//             None => orig_cost_fn.cost(enode, costs),
+//         }
+//     }
+// }
 
 impl core::fmt::Debug for grb::Matrix {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -356,7 +411,9 @@ impl<'a> CostFunction<Plan> for WanderCostFn<'a> {
                 }
             }
             Plan::Label(meta) => {
+                println!("{}", &meta.name);
                 let mat = (*self.graph).mats.get(&meta.name).unwrap().clone();
+                println!("!");
                 let mut smat = grb::Matrix::null();
                 unsafe {
                     LAGraph_RPQMatrix_ExtractRandom(mat, (&mut smat) as *mut grb::Matrix, 42);
@@ -390,7 +447,7 @@ mod tests {
                 Plan::Label(meta) => meta.nvals as f64,
                 Plan::Seq(args) => costs(args[0]).min(costs(args[1])).powf(1.1),
                 Plan::Alt(args) => costs(args[0]).min(costs(args[1])).powf(1.1),
-                Plan::Star(args) => costs(args[0]).powi(2),
+                Plan::Star(args) => costs(args[0]).powi(3),
                 Plan::LStar(args) => costs(args[0]) * costs(args[1]),
                 Plan::RStar(args) => costs(args[0]) * costs(args[1]),
             }
