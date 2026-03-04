@@ -180,7 +180,7 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
             Some((edge.clone(), edge_nvals))
         })
         .collect();
-    let  mats: HashMap<String, grb::Matrix> = mat_files
+    let mats: HashMap<String, grb::Matrix> = mat_files
         .iter()
         .map(|(edge, file)| {
             let mut mat = grb::Matrix(std::ptr::null_mut());

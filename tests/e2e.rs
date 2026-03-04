@@ -1,9 +1,9 @@
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-const COST_FUNCTION: [&str; 2] = ["nnz","cardinality"];
+const COST_FUNCTION: [&str; 2] = ["nnz", "cardinality"];
 
 fn graph_dir() -> PathBuf {
     PathBuf::from("tests/testdata/graph")
@@ -70,7 +70,7 @@ fn end_to_end() {
     for case in fs::read_dir(cases).unwrap() {
         let case = case.unwrap();
         let case_path = case.path();
-        
+
         let case_name = case_path.file_name().unwrap().to_string_lossy().to_string();
 
         let queries = case_path.join("queries.txt");
