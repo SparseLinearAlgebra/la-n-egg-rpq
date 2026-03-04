@@ -17,7 +17,7 @@ use crate::{
 
 pub struct Graph {
     nvals: HashMap<String, usize>,
-    size: usize,
+    pub size: usize,
     pub mats: HashMap<String, grb::Matrix>,
     pub verts: HashMap<String, usize>,
     pub nvals_reduces: HashMap<String, (usize, usize)>,
@@ -180,7 +180,7 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
             Some((edge.clone(), edge_nvals))
         })
         .collect();
-    let mut mats: HashMap<String, grb::Matrix> = mat_files
+    let  mats: HashMap<String, grb::Matrix> = mat_files
         .iter()
         .map(|(edge, file)| {
             let mut mat = grb::Matrix(std::ptr::null_mut());
