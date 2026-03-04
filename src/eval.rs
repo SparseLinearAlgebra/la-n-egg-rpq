@@ -42,7 +42,7 @@ extern "C" {
     ) -> libc::c_longlong;
     pub fn LAGraph_RPQMatrix_reduce(
         res: *mut usize,
-        mat:  grb::Matrix,
+        mat: grb::Matrix,
         reduce_type: u8, // reduce_type values:
                          // 0 --- reduce by row
                          // 1 --- reduce by col
