@@ -2,19 +2,20 @@ mod eval;
 mod graph;
 mod grb;
 mod plan;
+#[cfg(debug_assertions)]
+mod pprint;
 mod query;
 
 use crate::{
     eval::{eval, LAGraph_Init},
-    plan::{
-        make_rules, make_stupid_rules, CardinalityCostFn, NnzCostFn, RandomCostFn, StupidCostFn,
-        WanderCostFn,
-    },
+    plan::{make_rules, CardinalityCostFn, NnzCostFn, RandomCostFn, WanderCostFn},
     query::Query,
 };
 use egg::{RecExpr, Runner};
 use graph::Graph;
 use plan::Plan;
+#[cfg(debug_assertions)]
+use pprint::pretty;
 use std::{ops::Div, path::Path, time::Duration};
 
 #[cfg(debug_assertions)]
@@ -22,6 +23,29 @@ macro_rules! dprintln {
     ($($arg:tt)*) => {
         println!($($arg)*);
     };
+}
+
+#[cfg(debug_assertions)]
+fn debug_compare_with_random(
+    graph: &Graph,
+    expr: &RecExpr<Plan>,
+    chosen_plan: &RecExpr<Plan>,
+    chosen_time: Duration,
+) {
+    let runs: u32 = 500;
+
+    let results: Vec<(RecExpr<Plan>, usize, Duration)> = run_random(graph, runs, expr).collect();
+
+    if let Some((best_plan, _, best_time)) = results.iter().min_by_key(|(_, _, d)| *d) {
+        println!("--- DEBUG INFO ---");
+        println!("Chosen: {:?} {:?}", chosen_time, pretty(chosen_plan));
+        println!("Best random: {:?} {:?}\n", best_time, pretty(best_plan));
+        println!(
+            "Ratio: {:.2}",
+            chosen_time.as_secs_f64() / best_time.as_secs_f64()
+        );
+        println!("--------------------------");
+    }
 }
 
 #[cfg(not(debug_assertions))]
@@ -83,36 +107,45 @@ fn run_nnz<'a>(
     let rules = make_rules();
 
     // planning
-    let runner_start = std::time::Instant::now();
+    let _runner_start = std::time::Instant::now();
     let runner = Runner::default()
         .with_explanations_disabled()
         .with_expr(expr)
         .run(&rules);
-    let runner_time = runner_start.elapsed();
+    let _runner_time = _runner_start.elapsed();
     // planning
 
+    // This should perform a heat up.
+    (0..10).for_each(|_| {
+        let extractor = egg::Extractor::new(&runner.egraph, RandomCostFn);
+        let (_, plan) = extractor.find_best(runner.roots[0]);
+        let _ = eval(graph, plan);
+    });
+
     // extract
-    let extract_start = std::time::Instant::now();
+    let _extract_start = std::time::Instant::now();
     let extractor = egg::Extractor::new(&runner.egraph, NnzCostFn);
     let (_, plan) = extractor.find_best(runner.roots[0]);
-    let extract_time = extract_start.elapsed();
+    let _extract_time = _extract_start.elapsed();
     // extract
 
     // execution
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
     // execution
 
-    let eval_time = start.elapsed();
+    let _eval_time = _start.elapsed();
+    #[cfg(debug_assertions)]
+    debug_compare_with_random(graph, expr, &plan, _eval_time);
     dprintln!(
-        "\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
-        runner_time.as_nanos(),
-        extract_time.as_nanos(),
-        eval_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+        "runner time: {:.2}\nextract time: {}\neval time: {} \nplanning time: {}\ntotal time: {}",
+        _runner_time.as_secs_f64(),
+        _extract_time.as_secs_f64(),
+        _eval_time.as_secs_f64(),
+        _runner_time.as_secs_f64() + _extract_time.as_secs_f64(),
+        _runner_time.as_secs_f64() + _extract_time.as_secs_f64() + _eval_time.as_secs_f64(),
     );
-    Some((plan, answer, eval_time))
+    Some((plan, answer, _eval_time))
 }
 
 fn run_cardinality<'a>(
@@ -122,36 +155,53 @@ fn run_cardinality<'a>(
     let rules = make_rules();
 
     // planning
-    let runner_start = std::time::Instant::now();
+    let _runner_start = std::time::Instant::now();
     let runner = Runner::default()
         .with_explanations_disabled()
         .with_expr(expr)
         .run(&rules);
-    let runner_time = runner_start.elapsed();
+    let _runner_time = _runner_start.elapsed();
     // planning
 
+    // This should perform a heat up.
+    (0..10).for_each(|_| {
+        let extractor = egg::Extractor::new(&runner.egraph, RandomCostFn);
+        let (_, plan) = extractor.find_best(runner.roots[0]);
+        let _ = eval(graph, plan);
+    });
+
     // extract
-    let extract_start = std::time::Instant::now();
-    let extractor = egg::Extractor::new(&runner.egraph, CardinalityCostFn);
+    let _extract_start = std::time::Instant::now();
+    let extractor = egg::Extractor::new(
+        &runner.egraph,
+        CardinalityCostFn {
+            n: graph.size as f64,
+            star_penalty: 50.0,
+            lr_multiplier: 5.0,
+        },
+    );
     let (_, plan) = extractor.find_best(runner.roots[0]);
-    let extract_time = extract_start.elapsed();
+    let _extract_time = _extract_start.elapsed();
     // extract
 
     // execution
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
     // execution
 
-    let eval_time = start.elapsed();
+    let _eval_time = _start.elapsed();
+
+    #[cfg(debug_assertions)]
+    debug_compare_with_random(graph, expr, &plan, _eval_time);
     dprintln!(
-        "\n===DEBUG INFO===\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
-        runner_time.as_nanos(),
-        extract_time.as_nanos(),
-        eval_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+        "runner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        _runner_time,
+        _extract_time,
+        _eval_time,
+        _runner_time + _extract_time,
+        _runner_time + _extract_time + _eval_time,
     );
-    Some((plan, answer, eval_time))
+    Some((plan, answer, _eval_time))
 }
 
 fn run_wander<'a>(
@@ -161,36 +211,36 @@ fn run_wander<'a>(
     let rules = make_rules();
 
     // planning
-    let runner_start = std::time::Instant::now();
+    let _runner_start = std::time::Instant::now();
     let runner = Runner::default()
         .with_explanations_disabled()
         .with_expr(expr)
         .run(&rules);
-    let runner_time = runner_start.elapsed();
+    let _runner_time = _runner_start.elapsed();
     // planning
 
     // extract
-    let extract_start = std::time::Instant::now();
+    let _extract_start = std::time::Instant::now();
     let extractor = egg::Extractor::new(&runner.egraph, WanderCostFn { graph: graph });
     let (_, plan) = extractor.find_best(runner.roots[0]);
-    let extract_time = extract_start.elapsed();
+    let _extract_time = _extract_start.elapsed();
     // extract
 
     // execution
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
     let answer = eval(graph, plan.clone()).ok()?;
     // execution
 
-    let eval_time = start.elapsed();
+    let _eval_time = _start.elapsed();
     dprintln!(
-        "\n===DEBUG INFO===\nrunner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
-        runner_time.as_nanos(),
-        extract_time.as_nanos(),
-        eval_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos(),
-        runner_time.as_nanos() + extract_time.as_nanos() + eval_time.as_nanos(),
+        "runner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+        _runner_time.as_nanos(),
+        _extract_time.as_nanos(),
+        _eval_time.as_nanos(),
+        _runner_time.as_nanos() + _extract_time.as_nanos(),
+        _runner_time.as_nanos() + _extract_time.as_nanos() + _eval_time.as_nanos(),
     );
-    Some((plan, answer, eval_time))
+    Some((plan, answer, _eval_time))
 }
 
 // fn run_wander<'a>(
