@@ -151,7 +151,7 @@ fn run_nnz<'a>(
 fn run_cardinality<'a>(
     graph: &'a Graph,
     expr: &'a RecExpr<Plan>,
-) -> Option<(RecExpr<Plan>, usize, Duration)> {
+) -> Option<(RecExpr<Plan>, usize, Duration, Duration)> {
     let rules = make_rules();
 
     // planning
@@ -201,7 +201,7 @@ fn run_cardinality<'a>(
         _runner_time + _extract_time,
         _runner_time + _extract_time + _eval_time,
     );
-    Some((plan, answer, _eval_time))
+    Some((plan, answer, _eval_time, _runner_time + _extract_time))
 }
 
 fn run_simple<'a>(
@@ -375,11 +375,11 @@ fn main() {
             },
             "cardinality" => match expr {
                 Ok(expr) => {
-                    let result: Option<(RecExpr<Plan>, usize, Duration)> =
+                    let result: Option<(RecExpr<Plan>, usize, Duration, Duration)> =
                         run_cardinality(&graph, &expr);
                     match result {
-                        Some((_plan, ans, duration)) => {
-                            println!("{};{};{:?}", query_num, ans, duration.as_nanos());
+                        Some((_plan, ans, duration, planning_time)) => {
+                            println!("{};{};{:?};{:?}", query_num, ans, duration.as_nanos(),planning_time.as_nanos());
                         }
                         None => {
                             println!("no result");
