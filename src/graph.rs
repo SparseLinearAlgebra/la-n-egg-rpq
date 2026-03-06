@@ -18,25 +18,95 @@ use crate::{
 pub struct Graph {
     nvals: HashMap<String, usize>,
     pub size: usize,
+    pub mat_files: HashMap<String, PathBuf>,
     pub mats: HashMap<String, grb::Matrix>,
     pub verts: HashMap<String, usize>,
     pub nvals_reduces: HashMap<String, (usize, usize)>,
 }
 
 impl Graph {
-    fn plan_aux(&self, expr: &mut RecExpr<Plan>, pattern: Pattern) -> Result<Id, String> {
+    fn ensure_label_loaded(&mut self, uri: &str) -> Result<(), String> {
+        if self.mats.contains_key(uri) && self.nvals_reduces.contains_key(uri) {
+            return Ok(());
+        }
+
+        let file = self
+            .mat_files
+            .get(uri)
+            .cloned()
+            .ok_or_else(|| format!("no matrix file for {}", uri))?;
+
+        let mut mat = grb::Matrix(std::ptr::null_mut());
+
+        unsafe {
+            let c_file = CString::new(file.to_str().unwrap()).unwrap();
+            let mode = CString::new("r").unwrap();
+
+            let f = libc::fopen(c_file.as_ptr(), mode.as_ptr());
+            if f.is_null() {
+                return Err(format!("fopen failed for {}", file.display()));
+            }
+
+            let code = LAGraph_MMRead(&mut mat, f, std::ptr::null_mut());
+            libc::fclose(f);
+
+            if code != 0 {
+                return Err(format!(
+                    "unable to load matrix for {} in {} (error {})",
+                    uri,
+                    file.display(),
+                    code
+                ));
+            }
+        }
+
+        let mut nnz_rows: usize = 0;
+        let mut nnz_cols: usize = 0;
+
+        unsafe {
+            let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, mat, 0);
+            if code != 0 {
+                return Err(format!(
+                    "unable to compute row reduce for {} in {} (error {})",
+                    uri,
+                    file.display(),
+                    code
+                ));
+            }
+
+            let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, mat, 1);
+            if code != 0 {
+                return Err(format!(
+                    "unable to compute col reduce for {} in {} (error {})",
+                    uri,
+                    file.display(),
+                    code
+                ));
+            }
+        }
+
+        self.mats.insert(uri.to_string(), mat);
+        self.nvals_reduces
+            .insert(uri.to_string(), (nnz_rows, nnz_cols));
+
+        Ok(())
+    }
+
+    fn plan_aux(&mut self, expr: &mut RecExpr<Plan>, pattern: Pattern) -> Result<Id, String> {
         match pattern {
             Pattern::Uri(uri) => {
+                self.ensure_label_loaded(&uri)?;
+
                 let reduces = self
                     .nvals_reduces
                     .get(&uri)
-                    .ok_or(format!("no such label: {}", uri))?;
+                    .ok_or_else(|| format!("no such label: {}", uri))?;
 
                 Ok(expr.add(Plan::Label(LabelMeta {
                     nvals: *self
                         .nvals
                         .get(&uri)
-                        .ok_or(format!("no such label: {}", uri))?,
+                        .ok_or_else(|| format!("no such label: {}", uri))?,
                     name: uri,
                     rreduce_nvals: reduces.0,
                     creduce_nvals: reduces.1,
@@ -67,7 +137,7 @@ impl Graph {
         }
     }
 
-    pub fn run(&self, query: Query) -> Result<RecExpr<Plan>, String> {
+    pub fn run(&mut self, query: Query) -> Result<RecExpr<Plan>, String> {
         let mut expr: RecExpr<Plan> = RecExpr::default();
         match query {
             Query {
@@ -142,7 +212,7 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         })
         .collect();
 
-    let mat_files: Vec<(String, PathBuf)> = dirs
+    let mat_files: HashMap<String, PathBuf> = dirs
         .flatten()
         .map(|entry| entry.path())
         .filter_map(|entry| Some(entry.file_stem()?.to_str()?.to_string()))
@@ -161,73 +231,39 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         .filter_map(|(edge, file)| {
             let f = File::open(file).ok()?;
             let mut lines = BufReader::new(f).lines();
+
             lines.next()?.ok()?;
             lines.next()?.ok()?;
             let third_str = lines.next()?.ok()?;
-            let mut parts = third_str.split(' ');
 
+            let mut parts = third_str.split_whitespace();
             let nrows = parts.next()?.parse::<usize>().ok()?;
             let ncols = parts.next()?.parse::<usize>().ok()?;
             let nnz = parts.next()?.parse::<usize>().ok()?;
 
             if nrows != ncols {
-                panic!("matrix should be squared")
+                panic!("matrix should be squared");
             }
 
-            size = nrows;
-            let edge_nvals = nnz;
-
-            Some((edge.clone(), edge_nvals))
-        })
-        .collect();
-    let mats: HashMap<String, grb::Matrix> = mat_files
-        .iter()
-        .map(|(edge, file)| {
-            let mut mat = grb::Matrix(std::ptr::null_mut());
-            unsafe {
-                let c_file = CString::new(file.to_str().unwrap()).unwrap();
-                let mode = CString::new("r").unwrap();
-                let f = libc::fopen(c_file.as_ptr(), mode.as_ptr());
-                if f.is_null() {
-                    panic!("fopen failed for {}", file.display());
-                }
-                let code = LAGraph_MMRead(&mut mat, f, std::ptr::null_mut());
-                assert_eq!(
-                    code,
-                    0,
-                    "unable to load matrix for {} in {} (error {})",
-                    edge,
-                    file.display(),
-                    code
+            if size == 0 {
+                size = nrows;
+            } else if size != nrows {
+                panic!(
+                    "all matrices should have the same size, got {} and {}",
+                    size, nrows
                 );
-            };
-            (edge.clone(), mat)
-        })
-        .collect();
-
-    let nvals_reduces: HashMap<String, (usize, usize)> = mats
-        .iter()
-        .map(|(edge, mat)| {
-            let mut nnz_rows: usize = 0;
-            let mut nnz_cols: usize = 0;
-
-            unsafe {
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_rows, *mat, 0);
-                assert_eq!(code, 0);
-
-                let code = LAGraph_RPQMatrix_reduce(&mut nnz_cols, *mat, 1);
-                assert_eq!(code, 0);
             }
 
-            (edge.clone(), (nnz_rows, nnz_cols))
+            Some((edge.clone(), nnz))
         })
         .collect();
 
     Ok(Graph {
         nvals,
-        mats,
+        size,
+        mat_files,
+        mats: HashMap::new(),
         verts,
-        nvals_reduces,
-        size, // TODO: user it in plan builder
+        nvals_reduces: HashMap::new(),
     })
 }

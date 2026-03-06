@@ -16,7 +16,7 @@ use graph::Graph;
 use plan::Plan;
 // #[cfg(debug_assertions)]
 use pprint::pretty;
-use std::{ops::Div, path::Path, time::Duration};
+use std::{ops::Div, path::Path, time::Duration, collections::HashSet};
 
 #[cfg(debug_assertions)]
 macro_rules! dprintln {
@@ -26,25 +26,124 @@ macro_rules! dprintln {
 }
 
 // #[cfg(debug_assertions)]
+fn measure_plan_min(
+    graph: &Graph,
+    plan: &RecExpr<Plan>,
+    repeats: usize,
+) -> Option<(usize, Duration)> {
+    let mut best_time = Duration::MAX;
+    let mut best_answer = None;
+
+    for _ in 0..repeats {
+        let start = std::time::Instant::now();
+        let answer = eval(graph, plan.clone()).ok()?;
+        let elapsed = start.elapsed();
+
+        if elapsed < best_time {
+            best_time = elapsed;
+            best_answer = Some(answer);
+        }
+    }
+
+    Some((best_answer?, best_time))
+}
+
+fn collect_random_unique_plans(
+    expr: &RecExpr<Plan>,
+    target_unique: usize,
+    max_attempts: usize,
+    max_stale: usize,
+) -> Vec<RecExpr<Plan>> {
+    let rules = make_rules();
+
+    let runner = Runner::default()
+        .with_explanations_disabled()
+        .with_expr(expr)
+        .run(&rules);
+
+    let root = runner.roots[0];
+    let mut seen = HashSet::<String>::new();
+    let mut plans = Vec::<RecExpr<Plan>>::new();
+    let mut stale = 0usize;
+
+    for _ in 0..max_attempts {
+        let extractor = egg::Extractor::new(&runner.egraph, RandomCostFn);
+        let (_, plan) = extractor.find_best(root);
+
+        let key = pretty(&plan);
+        if seen.insert(key) {
+            plans.push(plan);
+            stale = 0;
+
+            if plans.len() >= target_unique {
+                break;
+            }
+        } else {
+            stale += 1;
+            if stale >= max_stale {
+                break;
+            }
+        }
+    }
+
+    plans
+}
+
+fn find_best_random_plan(
+    graph: &Graph,
+    expr: &RecExpr<Plan>,
+    target_unique: usize,
+    max_attempts: usize,
+    max_stale: usize,
+    repeats_per_plan: usize,
+) -> Option<(RecExpr<Plan>, usize, Duration, usize)> {
+    let plans = collect_random_unique_plans(expr, target_unique, max_attempts, max_stale);
+
+    let found_unique = plans.len();
+
+    plans
+        .into_iter()
+        .filter_map(|plan| {
+            let (answer, time) = measure_plan_min(graph, &plan, repeats_per_plan)?;
+            Some((plan, answer, time, found_unique))
+        })
+        .min_by_key(|(_, _, time, _)| *time)
+}
+
 fn debug_compare_with_random(
     graph: &Graph,
     expr: &RecExpr<Plan>,
     chosen_plan: &RecExpr<Plan>,
     chosen_time: Duration,
 ) {
-    let runs: u32 = 500;
+    let target_unique = 50;
+    let max_attempts = 200;
+    let max_stale = 100;
+    let repeats_per_plan = 2;
 
-    let results: Vec<(RecExpr<Plan>, usize, Duration)> = run_random(graph, runs, expr).collect();
+    let chosen = measure_plan_min(graph, chosen_plan, repeats_per_plan);
+    let chosen_time = chosen.map(|(_, t)| t).unwrap_or(chosen_time);
 
-    if let Some((best_plan, _, best_time)) = results.iter().min_by_key(|(_, _, d)| *d) {
-        // println!("--- DEBUG INFO ---");
-        println!("{:?}{:?}", chosen_time, pretty(chosen_plan));
-        println!("{:?}{:?}", best_time, pretty(best_plan));
+    let best_random = find_best_random_plan(
+        graph,
+        expr,
+        target_unique,
+        max_attempts,
+        max_stale,
+        repeats_per_plan,
+    );
+
+    if let Some((best_plan, _, best_time, found_unique)) = best_random {
+        println!("{:?}#{:?}", chosen_time, pretty(chosen_plan));
+        println!("{:?}#{:?}", best_time, pretty(&best_plan));
+        // println!("Unique random plans found: {}", found_unique);
         println!(
-            "Ratio:{:.2}",
+            "{:.2}",
             chosen_time.as_secs_f64() / best_time.as_secs_f64()
         );
-        // println!("--------------------------");
+    } else {
+        println!("Chosen: {:?} {:?}", chosen_time, pretty(chosen_plan));
+        println!("Best random: not found");
     }
 }
 
@@ -346,7 +445,7 @@ fn main() {
 
     let graph_path = std::env::args().nth(1).unwrap();
     let graph_path = Path::new(&graph_path);
-    let graph = graph::load_dir(graph_path).expect("unable to load graph");
+    let mut graph = graph::load_dir(graph_path).expect("unable to load graph");
 
     let queries_path = std::env::args().nth(2).unwrap();
     let queries_path = Path::new(&queries_path);
