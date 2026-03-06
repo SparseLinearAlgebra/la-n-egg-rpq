@@ -2,7 +2,7 @@ mod eval;
 mod graph;
 mod grb;
 mod plan;
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 mod pprint;
 mod query;
 
@@ -14,7 +14,7 @@ use crate::{
 use egg::{RecExpr, Runner};
 use graph::Graph;
 use plan::Plan;
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 use pprint::pretty;
 use std::{ops::Div, path::Path, time::Duration};
 
@@ -25,7 +25,7 @@ macro_rules! dprintln {
     };
 }
 
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 fn debug_compare_with_random(
     graph: &Graph,
     expr: &RecExpr<Plan>,
@@ -37,14 +37,14 @@ fn debug_compare_with_random(
     let results: Vec<(RecExpr<Plan>, usize, Duration)> = run_random(graph, runs, expr).collect();
 
     if let Some((best_plan, _, best_time)) = results.iter().min_by_key(|(_, _, d)| *d) {
-        println!("--- DEBUG INFO ---");
-        println!("Chosen: {:?} {:?}", chosen_time, pretty(chosen_plan));
-        println!("Best random: {:?} {:?}\n", best_time, pretty(best_plan));
+        // println!("--- DEBUG INFO ---");
+        println!("{:?}{:?}", chosen_time, pretty(chosen_plan));
+        println!("{:?}{:?}", best_time, pretty(best_plan));
         println!(
-            "Ratio: {:.2}",
+            "Ratio:{:.2}",
             chosen_time.as_secs_f64() / best_time.as_secs_f64()
         );
-        println!("--------------------------");
+        // println!("--------------------------");
     }
 }
 
@@ -135,16 +135,16 @@ fn run_nnz<'a>(
     // execution
 
     let _eval_time = _start.elapsed();
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     debug_compare_with_random(graph, expr, &plan, _eval_time);
-    dprintln!(
-        "runner time: {:.2}\nextract time: {}\neval time: {} \nplanning time: {}\ntotal time: {}",
-        _runner_time.as_secs_f64(),
-        _extract_time.as_secs_f64(),
-        _eval_time.as_secs_f64(),
-        _runner_time.as_secs_f64() + _extract_time.as_secs_f64(),
-        _runner_time.as_secs_f64() + _extract_time.as_secs_f64() + _eval_time.as_secs_f64(),
-    );
+    // dprintln!(
+    //     "runner time: {:.2}\nextract time: {}\neval time: {} \nplanning time: {}\ntotal time: {}",
+    //     _runner_time.as_secs_f64(),
+    //     _extract_time.as_secs_f64(),
+    //     _eval_time.as_secs_f64(),
+    //     _runner_time.as_secs_f64() + _extract_time.as_secs_f64(),
+    //     _runner_time.as_secs_f64() + _extract_time.as_secs_f64() + _eval_time.as_secs_f64(),
+    // );
     Some((plan, answer, _eval_time))
 }
 
@@ -191,16 +191,16 @@ fn run_cardinality<'a>(
 
     let _eval_time = _start.elapsed();
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     debug_compare_with_random(graph, expr, &plan, _eval_time);
-    dprintln!(
-        "runner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
-        _runner_time,
-        _extract_time,
-        _eval_time,
-        _runner_time + _extract_time,
-        _runner_time + _extract_time + _eval_time,
-    );
+    // dprintln!(
+    //     "runner time: {:?}\nextract time: {:?}\neval time: {:?} \nplanning time: {:?}\ntotal time: {:?}",
+    //     _runner_time,
+    //     _extract_time,
+    //     _eval_time,
+    //     _runner_time + _extract_time,
+    //     _runner_time + _extract_time + _eval_time,
+    // );
     Some((plan, answer, _eval_time))
 }
 
@@ -379,7 +379,7 @@ fn main() {
                         run_cardinality(&graph, &expr);
                     match result {
                         Some((_plan, ans, duration)) => {
-                            println!("{};{};{:?}", query_num, ans, duration.as_nanos());
+                            // println!("{};{};{:?}", query_num, ans, duration.as_nanos());
                         }
                         None => {
                             println!("no result");
