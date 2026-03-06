@@ -22,7 +22,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy
       - run: |
-          git clone --depth 1 https://github.com/DrTimothyAldenDavis/GraphBLAS.git
+          git clone --depth 1 https://github.com/SparseLinearAlgebra/GraphBLAS.git -b rain/rpq-matrix-cardinality
           cd GraphBLAS
           make compact
           sudo make install
