@@ -33,4 +33,4 @@ jobs:
           sudo make install
           cd ../..
       - run: cargo build --verbose
-      - run: cargo test --release --verbose
+      - run: LD_LIBRARY_PATH=/usr/local/lib cargo test --release --verbose
