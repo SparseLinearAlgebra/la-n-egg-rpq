@@ -28,7 +28,7 @@ pub struct RpqMatrixPlan {
 #[link(name = "lagraphx")]
 extern "C" {
     pub fn LAGraph_Init(msg: *mut libc::c_char) -> libc::c_int;
-    pub fn LAGraph_DestroyRpqMatrixPlan(plan: *mut RpqMatrixPlan);
+    pub fn LAGraph_DestroyRpqMatrixPlan(plan: *mut RpqMatrixPlan)-> libc::c_longlong;
     pub fn LAGraph_RPQMatrix(
         ans: *mut usize,
         plan: *mut RpqMatrixPlan,
@@ -64,6 +64,9 @@ extern "C" {
         res: *mut grb::Matrix,
         nvals: *mut usize,
     ) -> libc::c_longlong;
+    pub fn LAGraph_RPQMatrix_Free (
+        res: *mut grb::Matrix,
+    )-> libc::c_longlong;
 
 }
 
@@ -80,86 +83,134 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
     let mut plans: Vec<RpqMatrixPlan> = vec![
         RpqMatrixPlan {
             op: RpqMatrixOp::Label,
-            lhs: null_mut(),
-            rhs: null_mut(),
+            lhs: std::ptr::null_mut(),
+            rhs: std::ptr::null_mut(),
             mat: grb::Matrix::null(),
             res_mat: grb::Matrix::null(),
         };
         expr.len()
     ];
-    expr.items().for_each(|(id, plan)| {
+
+    let mut owns_label_mat = vec![false; expr.len()];
+
+    for (id, plan) in expr.items() {
+        let idx: usize = id.into();
+
         let eval_plan = match plan {
             &Plan::Seq([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Concat,
                 lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
-                res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                res_mat: grb::Matrix::null(),
             },
+
             &Plan::Alt([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Lor,
                 lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
-                res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                res_mat: grb::Matrix::null(),
             },
+
             &Plan::Star([lhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::Kleene,
-                lhs: null_mut(),
+                lhs: std::ptr::null_mut(),
                 rhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
-                res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                res_mat: grb::Matrix::null(),
             },
+
             &Plan::LStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneL,
                 lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
-                res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                res_mat: grb::Matrix::null(),
             },
+
             &Plan::RStar([lhs, rhs]) => RpqMatrixPlan {
                 op: RpqMatrixOp::KleeneR,
                 lhs: plans.get_mut::<usize>(lhs.into()).unwrap() as *mut RpqMatrixPlan,
                 rhs: plans.get_mut::<usize>(rhs.into()).unwrap() as *mut RpqMatrixPlan,
-                res_mat: grb::Matrix::null(),
                 mat: grb::Matrix::null(),
+                res_mat: grb::Matrix::null(),
             },
+
             Plan::Label(meta) => {
-                let mut mat: grb::Matrix = grb::Matrix(std::ptr::null_mut());
-                let mat = graph
-                    .mats
-                    .get(&meta.name)
-                    .or({
-                        graph.verts.get(&meta.name).map(|vert_idx| {
-                            unsafe {
-                                LAGraph_RPQMatrix_label(
-                                    &mut mat as *mut grb::Matrix,
-                                    *vert_idx - 1,
-                                    graph.verts.len(),
-                                    graph.verts.len(),
-                                );
-                            }
-                            &mat
-                        })
-                    })
-                    .unwrap()
-                    .clone();
+                let mat = if let Some(m) = graph.mats.get(&meta.name) {
+                    m.clone()
+                } else if let Some(vert_idx) = graph.verts.get(&meta.name) {
+                    let mut tmp = grb::Matrix::null();
+                    let info = unsafe {
+                        LAGraph_RPQMatrix_label(
+                            &mut tmp as *mut grb::Matrix,
+                            *vert_idx - 1,
+                            graph.verts.len(),
+                            graph.verts.len(),
+                        )
+                    };
+                    if info != 0 {
+                        return Err(format!(
+                            "LAGraph_RPQMatrix_label failed for {:?}: {}",
+                            meta.name, info
+                        ));
+                    }
+                    owns_label_mat[idx] = true;
+                    tmp
+                } else {
+                    return Err(format!("Unknown label: {}", meta.name));
+                };
+
                 RpqMatrixPlan {
                     op: RpqMatrixOp::Label,
-                    lhs: null_mut(),
-                    rhs: null_mut(),
+                    lhs: std::ptr::null_mut(),
+                    rhs: std::ptr::null_mut(),
+                    mat,
                     res_mat: grb::Matrix::null(),
-                    mat: mat,
                 }
             }
         };
-        plans[std::convert::Into::<usize>::into(id)] = eval_plan;
-    });
-    let plan = plans.iter_mut().last().unwrap();
-    let mut ans: usize = 0;
-    unsafe {
-        LAGraph_RPQMatrix(&mut ans, plan as *mut RpqMatrixPlan, null_mut());
-        LAGraph_DestroyRpqMatrixPlan(plan);
+
+        plans[idx] = eval_plan;
     }
+
+    let root = plans
+        .last_mut()
+        .ok_or_else(|| "empty expression".to_string())?;
+
+    let mut ans: usize = 0;
+    let info_eval = unsafe {
+        LAGraph_RPQMatrix(&mut ans, root as *mut RpqMatrixPlan, std::ptr::null_mut())
+    };
+
+    let info_destroy = unsafe {
+        LAGraph_DestroyRpqMatrixPlan(root as *mut RpqMatrixPlan)
+    };
+
+    for (i, p) in plans.iter_mut().enumerate() {
+        if owns_label_mat[i] {
+            unsafe {
+                let info_free = LAGraph_RPQMatrix_Free(&mut p.mat as *mut grb::Matrix);
+                if info_free != 0 {
+                    return Err(format!(
+                        "GrB_Matrix_free failed for temporary label matrix at node {}: {}",
+                        i, info_free
+                    ));
+                }
+            }
+            p.mat = grb::Matrix::null();
+            p.res_mat = grb::Matrix::null();
+        }
+    }
+
+    if info_eval != 0 {
+        return Err(format!("LAGraph_RPQMatrix failed: {}", info_eval));
+    }
+
+    if info_destroy != 0 {
+        return Err(format!("LAGraph_DestroyRpqMatrixPlan failed: {}", info_destroy));
+    }
+
     Ok(ans)
 }
