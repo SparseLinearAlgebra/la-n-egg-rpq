@@ -121,8 +121,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                         LAGraph_RPQMatrix_label(
                             &mut tmp as *mut grb::Matrix,
                             *vert_idx - 1,
-                             graph.size,
-                             graph.size,
+                            graph.size,
+                            graph.size,
                         )
                     };
                     owns_label_mat[std::convert::Into::<usize>::into(id)] = true;
