@@ -47,23 +47,6 @@ extern "C" {
                          // 0 --- reduce by row
                          // 1 --- reduce by col
     ) -> libc::c_int;
-    pub fn LAGraph_RPQMatrix_ExtractRandom(
-        rhs: grb::Matrix,
-        srhs: *mut grb::Matrix,
-        seed: libc::c_longlong,
-    ) -> libc::c_longlong;
-    pub fn LAGraph_RPQMatrix_Alt(
-        lhs: grb::Matrix,
-        rhs: grb::Matrix,
-        res: *mut grb::Matrix,
-        nvals: *mut usize,
-    ) -> libc::c_longlong;
-    pub fn LAGraph_RPQMatrix_Seq(
-        lhs: grb::Matrix,
-        rhs: grb::Matrix,
-        res: *mut grb::Matrix,
-        nvals: *mut usize,
-    ) -> libc::c_longlong;
     pub fn LAGraph_RPQMatrix_Free(res: *mut grb::Matrix) -> libc::c_longlong;
 
 }
@@ -138,8 +121,8 @@ pub fn eval(graph: &Graph, expr: egg::RecExpr<Plan>) -> Result<usize, String> {
                         LAGraph_RPQMatrix_label(
                             &mut tmp as *mut grb::Matrix,
                             *vert_idx - 1,
-                            graph.verts.len(),
-                            graph.verts.len(),
+                             graph.size,
+                             graph.size,
                         )
                     };
                     owns_label_mat[std::convert::Into::<usize>::into(id)] = true;

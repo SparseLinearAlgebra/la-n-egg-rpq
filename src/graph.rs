@@ -155,7 +155,6 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
         })
         .collect();
 
-    let mut size: usize = 0;
     let nvals: HashMap<String, usize> = mat_files
         .iter()
         .filter_map(|(edge, file)| {
@@ -174,7 +173,6 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
                 panic!("matrix should be squared")
             }
 
-            size = nrows;
             let edge_nvals = nnz;
 
             Some((edge.clone(), edge_nvals))
@@ -222,12 +220,12 @@ pub fn load_dir(path: &Path) -> io::Result<Graph> {
             (edge.clone(), (nnz_rows, nnz_cols))
         })
         .collect();
-
+    let size: usize = verts.len();
     Ok(Graph {
         nvals,
         mats,
         verts,
         nvals_reduces,
-        size, // TODO: user it in plan builder
+        size,
     })
 }

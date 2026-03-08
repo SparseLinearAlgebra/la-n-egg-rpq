@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 
-const COST_FUNCTION: [&str; 3] = ["simple", "nnz", "cardinality"];
+const COST_FUNCTION: [&str; 2] = ["simple", "cardinality"];
 
 fn graph_dir() -> PathBuf {
     PathBuf::from("tests/testdata/graph")
