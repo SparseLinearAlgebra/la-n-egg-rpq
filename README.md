@@ -34,7 +34,11 @@ Basically, the binary can be used as follows.
 ```bash
 la-n-egg-rpq <path-to-graph-as-matrix-market-files> <queries-file> <cost-function>
 ```
-available cost functions: `cardinality`, `simple`, `random`
+available cost functions: 
+- `cardinality`  --- cost function based on cardinality of query matrices
+- `simple` --- disable any optimizations of query execution plan
+- `random` --- iterates over hundreds of possible plans and find the best. Exist for other cost function analysis
+
 
 To convert the graph, please, use [our tools](https://github.com/SparseLinearAlgebra/la-rpq) for converting them into [the MatrixMarket format](https://math.nist.gov/MatrixMarket/formats.html). You might start from [one of the prepared datasets](https://github.com/SparseLinearAlgebra/la-rpq/tree/main/Datasets).
 
@@ -49,6 +53,18 @@ The queries should be expressed in the SPARQL format. They should use `<query-nu
 ```
 
 By default the binary executes randomly generated query plans for each query from the plan and printing best/worst/mean time for each query kind.
+
+## Debug
+
+The project can be built in debug mode to inspect query plans and internal execution details.
+
+To build the debug version:
+
+```bash
+cargo build
+```
+
+The binary will be available in the `target/debug/` directory
 
 ## Test
 
